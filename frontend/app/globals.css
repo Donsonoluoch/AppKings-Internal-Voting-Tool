@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --appkings-navy: #071a3b;
+  --appkings-blue: #0e3c83;
+  --appkings-orange: #ff542e;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-ink antialiased;
+  background-image:
+    radial-gradient(ellipse at 92% 10%, rgba(32, 105, 197, 0.08), transparent 30rem),
+    radial-gradient(ellipse at 2% 55%, rgba(32, 105, 197, 0.045), transparent 24rem);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_28px_rgba(12,36,72,0.06)];
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition duration-150
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent-500 text-white shadow-sm hover:bg-accent-600;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:border-brand-200 hover:bg-brand-50;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base transition
+      placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-slate-700;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .link {
+    @apply font-medium text-brand-700 underline-offset-2 hover:underline;
+  }
+
+  .app-shell {
+    background-image:
+      linear-gradient(180deg, rgba(246, 249, 253, 0.75), rgba(246, 249, 253, 0) 22rem),
+      radial-gradient(ellipse at 100% 0%, rgba(32, 105, 197, 0.08), transparent 28rem);
+  }
+
+  .login-backdrop {
+    background-color: var(--appkings-navy);
+    background-image:
+      radial-gradient(ellipse at 50% 45%, rgba(23, 76, 151, 0.46), transparent 55%),
+      linear-gradient(30deg, transparent 48%, rgba(48, 113, 197, 0.14) 49%, rgba(48, 113, 197, 0.14) 50%, transparent 51%),
+      linear-gradient(150deg, transparent 48%, rgba(48, 113, 197, 0.12) 49%, rgba(48, 113, 197, 0.12) 50%, transparent 51%);
+    background-size: auto, 76px 132px, 76px 132px;
+  }
+}

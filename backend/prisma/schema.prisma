@@ -1,0 +1,202 @@
+// AppKings Solutions — 2026 Employee Awards Voting System
+// Points only: one pick per category, 1 point each, no percentages (§1, §6).
+//
+// Note on departments (§8): Department exists only to support Team of the Year, where the
+// nominee is a team rather than a person. Nothing else in the system depends on it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  COMMITTEE
+  ADMIN
+}
+
+enum Phase {
+  NOT_STARTED
+  PHASE_1
+  PHASE_2
+  PHASE_3
+  CLOSED
+  PUBLISHED
+}
+
+model Department {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  employees   Employee[]
+  nominations Nomination[]
+  candidates  Candidate[]
+}
+
+model Employee {
+  id                 String      @id @default(cuid())
+  fullName           String
+  phone              String      @unique // normalized to +2547XXXXXXXX
+  role               Role        @default(EMPLOYEE)
+  eligible           Boolean     @default(true) // eligible to be nominated
+  active             Boolean     @default(true) // allowed to log in
+  departmentId       String?
+  department         Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  deviceHash         String? // SHA-256 of the device token, never the raw token
+  deviceRegisteredAt DateTime?
+  deviceResetCount   Int         @default(0)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  nominationsMade Nomination[]    @relation("Nominator")
+  nominationsGot  Nomination[]    @relation("Nominee")
+  candidacies     Candidate[]
+  committeeVotes  CommitteeVote[]
+  conflicts       Conflict[]
+  votes           Vote[]
+  voteReceipts    VoteReceipt[]
+
+  @@index([departmentId])
+}
+
+model Category {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  criteria  String
+  forTeams  Boolean @default(false) // true for Team of the Year
+  sortOrder Int
+
+  nominations Nomination[]
+  candidates  Candidate[]
+}
+
+model Nomination {
+  id            String   @id @default(cuid())
+  categoryId    String
+  nominatorId   String
+  nomineeId     String? // employee nominee
+  nomineeDeptId String? // team nominee (Team of the Year)
+  justification String
+  isSelf        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  nominator   Employee    @relation("Nominator", fields: [nominatorId], references: [id], onDelete: Cascade)
+  nominee     Employee?   @relation("Nominee", fields: [nomineeId], references: [id], onDelete: Cascade)
+  nomineeDept Department? @relation(fields: [nomineeDeptId], references: [id], onDelete: Cascade)
+
+  // One nomination per employee per category; it can be replaced until Phase 1 closes.
+  @@unique([categoryId, nominatorId])
+  @@index([nominatorId, isSelf])
+  @@index([categoryId, nomineeId])
+  @@index([categoryId, nomineeDeptId])
+}
+
+// One row per category slot: a person (or team) that made the top 5 of a category after
+// Phase 1. Points are saved on the row when each cut is confirmed, so results can't change.
+model Candidate {
+  id               String   @id @default(cuid())
+  categoryId       String
+  employeeId       String?
+  departmentId     String?
+  nominationPoints Int      @default(0) // Phase 1 points in this category, saved when Phase 1 closes
+  committeePoints  Int      @default(0) // Phase 2 points in this category, saved when Phase 2 closes
+  finalPoints      Int      @default(0) // Phase 3 points in this category, saved when voting closes
+  inPhase2         Boolean  @default(false) // person made the top 15 overall after Phase 1
+  inPhase3         Boolean  @default(false) // person made the 6–10 shortlist after Phase 2
+  createdAt        DateTime @default(now())
+
+  category       Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  employee       Employee?       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  department     Department?     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  committeeVotes CommitteeVote[]
+  conflicts      Conflict[]
+  votes          Vote[]
+
+  @@unique([categoryId, employeeId])
+  @@unique([categoryId, departmentId])
+  @@index([categoryId, inPhase2])
+  @@index([categoryId, inPhase3])
+}
+
+// Phase 2: one pick per committee member per category, 1 point each.
+// COMMITTEE_PICKS_PER_CATEGORY (default 1) is enforced in code.
+model CommitteeVote {
+  id          String   @id @default(cuid())
+  candidateId String
+  memberId    String
+  categoryId  String
+  createdAt   DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  member    Employee  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, memberId])
+  @@index([categoryId, memberId])
+}
+
+model Conflict {
+  id          String   @id @default(cuid())
+  candidateId String
+  memberId    String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  member    Employee  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, memberId])
+}
+
+// Confidential voting (§9): voterId is always null. VoteReceipt answers "who has voted".
+model Vote {
+  id          String   @id @default(cuid())
+  categoryId  String
+  candidateId String
+  voterId     String? // unused by design — kept null so a vote can never be traced
+  createdAt   DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  voter     Employee? @relation(fields: [voterId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId])
+  @@index([candidateId])
+}
+
+// Records WHO has voted in a category, but not for WHOM
+model VoteReceipt {
+  id         String   @id @default(cuid())
+  voterId    String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  voter Employee @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@unique([voterId, categoryId])
+  @@index([categoryId])
+}
+
+model Settings {
+  id                    Int      @id @default(1)
+  phase                 Phase    @default(NOT_STARTED)
+  phase1ResultsPublic   Boolean  @default(false)
+  phase2ResultsPublic   Boolean  @default(false)
+  resultsPublic         Boolean  @default(false)
+  updatedAt             DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String // LOGIN, LOGIN_FAILED, DEVICE_RESET, PHASE_CHANGE, NOMINATE, VOTE_CAST...
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}

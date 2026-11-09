@@ -1,0 +1,88 @@
+# Production topology: exactly two application containers.
+# PostgreSQL is external to this Compose project and configured with DATABASE_URL.
+#
+#   docker compose up -d --build → api + web
+#   Only the web container is published; its /api proxy reaches the private API service.
+name: appkings-voting
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-production}
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL for the external PostgreSQL database in the root .env}
+  JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters in the root .env}
+  SESSION_HOURS: ${SESSION_HOURS:-12}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  TRUST_PROXY: ${TRUST_PROXY:-1}
+  BOOTSTRAP_ADMIN_PHONE: ${BOOTSTRAP_ADMIN_PHONE:-}
+  BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+  SELF_NOMINATION_LIMIT: ${SELF_NOMINATION_LIMIT:-1}
+  NOMINATION_MIN_JUSTIFICATION: ${NOMINATION_MIN_JUSTIFICATION:-20}
+  TOP_PER_CATEGORY: ${TOP_PER_CATEGORY:-5}
+  PHASE1_FINALISTS: ${PHASE1_FINALISTS:-15}
+  PHASE2_FINALISTS_MIN: ${PHASE2_FINALISTS_MIN:-6}
+  PHASE2_FINALISTS_MAX: ${PHASE2_FINALISTS_MAX:-10}
+  MIN_CANDIDATES_PER_CATEGORY: ${MIN_CANDIDATES_PER_CATEGORY:-2}
+  TEAM_FINALISTS: ${TEAM_FINALISTS:-3}
+  COMMITTEE_PICKS_PER_CATEGORY: ${COMMITTEE_PICKS_PER_CATEGORY:-1}
+  LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-10}
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: backend
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      APP_ROLE: api
+      PORT: 4000
+      API_HOST: 0.0.0.0
+      RUN_SEED: ${RUN_SEED:-false}
+      SEED_DEMO: ${SEED_DEMO:-false}
+    expose:
+      - "4000"
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      APP_ROLE: web
+      PORT: 3000
+      APP_PORT: 3000
+      API_INTERNAL_URL: http://api:4000/api
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # Local development only: docs/deploy.md expects Postgres to be external.
+  # Defined here so `docker compose up` is all a laptop needs.
+  db:
+    image: postgres:16-alpine
+    container_name: appkings-voting-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-appkings}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-appkings}
+      POSTGRES_DB: ${POSTGRES_DB:-appkings_voting}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-appkings} -d ${POSTGRES_DB:-appkings_voting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  db_data:
+    name: appkings-voting_db_data
