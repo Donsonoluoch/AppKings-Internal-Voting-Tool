@@ -1,0 +1,137 @@
+# Development stack with hot reload. Source is bind-mounted; node_modules lives in a named
+# volume so host binaries never leak into the containers.
+#
+#   npm run dev:stack              → db + both apps in ONE container (supervisord, hot reload)
+#   npm run dev:split              → db + api + web as separate containers
+#   npm run dev:api                → db + api only (nothing published except the API)
+#   npm run dev:web                → db + web only
+#   npm run dev:stack:down         (keeps the database)
+#   npm run dev:stack:reset        (wipes the database too)
+#
+# Migrations run on every start; the seed only runs when the database is empty, so demo
+# data is created once and your local nominations/votes survive a restart.
+name: appkings-voting-dev
+
+x-dev-env: &dev-env
+  NODE_ENV: development
+  DATABASE_URL: postgresql://${POSTGRES_USER:-appkings}:${POSTGRES_PASSWORD:-appkings}@db:5432/${POSTGRES_DB:-appkings_voting}
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-before-deploying-32chars}
+  SESSION_HOURS: ${SESSION_HOURS:-12}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+  COOKIE_SECURE: "false"
+  TRUST_PROXY: 1
+  SELF_NOMINATION_LIMIT: ${SELF_NOMINATION_LIMIT:-1}
+  NOMINATION_MIN_JUSTIFICATION: ${NOMINATION_MIN_JUSTIFICATION:-20}
+  TOP_PER_CATEGORY: ${TOP_PER_CATEGORY:-5}
+  PHASE1_FINALISTS: ${PHASE1_FINALISTS:-15}
+  PHASE2_FINALISTS_MIN: ${PHASE2_FINALISTS_MIN:-6}
+  PHASE2_FINALISTS_MAX: ${PHASE2_FINALISTS_MAX:-10}
+  MIN_CANDIDATES_PER_CATEGORY: ${MIN_CANDIDATES_PER_CATEGORY:-2}
+  TEAM_FINALISTS: ${TEAM_FINALISTS:-3}
+  COMMITTEE_PICKS_PER_CATEGORY: ${COMMITTEE_PICKS_PER_CATEGORY:-1}
+  SEED_DEMO: ${SEED_DEMO_DEV:-true}
+  CHOKIDAR_USEPOLLING: "true"
+  WATCHPACK_POLLING: "true"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-appkings}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-appkings}
+      POSTGRES_DB: ${POSTGRES_DB:-appkings_voting}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-appkings} -d ${POSTGRES_DB:-appkings_voting}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ------------------------------------------------------------------ default
+  # Both apps in one container: supervisord runs `node --watch` for the API and
+  # `next dev` for the web app. Same shape as production, but with hot reload.
+  app:
+    image: node:22-alpine
+    working_dir: /app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "npm ci --no-audit --no-fund &&
+             cd backend && npx prisma generate && npx prisma migrate deploy &&
+           cd /app && node scripts/seed-if-empty.cjs &&
+           apk add --no-cache supervisor &&
+           npm run dev:all"
+    environment:
+      <<: *dev-env
+      APP_ROLE: all
+      PORT: 4000
+      APP_PORT: 3000
+      API_INTERNAL_URL: http://127.0.0.1:4000/api
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      RUN_SEED: ${RUN_SEED_DEV:-auto}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ..:/app
+      - node_modules_dev:/app/node_modules
+      - next_cache_dev:/app/frontend/.next
+
+  # ------------------------------------------------------------------ split
+  api:
+    profiles: ["split", "api"]
+    image: node:22-alpine
+    working_dir: /app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "npm ci --no-audit --no-fund &&
+             cd backend && npx prisma generate && npx prisma migrate deploy &&
+             cd /app && node scripts/seed-if-empty.cjs && npm run dev:api"
+    environment:
+      <<: *dev-env
+      PORT: 4000
+      API_HOST: 0.0.0.0
+      RUN_SEED: ${RUN_SEED_DEV:-auto}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - ..:/app
+      - node_modules_dev:/app/node_modules
+
+  web:
+    profiles: ["split", "web"]
+    image: node:22-alpine
+    working_dir: /app
+    restart: unless-stopped
+    depends_on:
+      - db
+    command: >
+      sh -c "npm ci --no-audit --no-fund &&
+             cd /app && npm run dev:web -- -H 0.0.0.0"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      NEXT_TELEMETRY_DISABLED: "1"
+      API_INTERNAL_URL: http://api:4000/api
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ..:/app
+      - node_modules_dev:/app/node_modules
+      - next_cache_dev:/app/frontend/.next
+
+volumes:
+  db_data_dev:
+  node_modules_dev:
+  next_cache_dev:

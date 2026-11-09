@@ -1,0 +1,17 @@
+{
+  "name": "@appkings/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Constants and pure helpers shared by the API and the web app",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "constants.js",
+    "phases.js",
+    "scoring.js"
+  ],
+  "scripts": {
+    "build": "node -e \"console.log('shared: nothing to build')\"",
+    "test": "node --test"
+  }
+}

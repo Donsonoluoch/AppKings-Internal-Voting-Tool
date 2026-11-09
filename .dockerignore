@@ -1,0 +1,23 @@
+# Build context filter for the root Dockerfile.
+#
+# Staff data must never reach the image by accident: real employee CSVs, `.env` files and
+# local scripts are excluded. The image only needs the four source trees plus the infra
+# files the Dockerfile copies. Everything else is ignored by default.
+
+*
+!package.json
+!package-lock.json
+!backend/**
+!frontend/**
+!packages/**
+!infra/**
+!docs/**
+
+backend/**/.env
+backend/**/node_modules
+frontend/**/.env*
+frontend/**/node_modules
+frontend/**/.next
+**/*.log
+**/coverage
+**/.DS_Store

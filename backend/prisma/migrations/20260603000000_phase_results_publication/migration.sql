@@ -1,0 +1,3 @@
+ALTER TABLE "Settings"
+ADD COLUMN "phase1ResultsPublic" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "phase2ResultsPublic" BOOLEAN NOT NULL DEFAULT false;
