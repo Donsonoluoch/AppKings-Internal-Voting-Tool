@@ -19,21 +19,28 @@ const app = createApp();
 // on loopback, so only the Next.js proxy reaches it.
 const host = process.env.API_HOST || undefined;
 
-const server = app.listen(config.port, host, async () => {
-  console.log(`[api] listening on http://${host || 'localhost'}:${config.port} (${config.env})`);
-  console.log(`[api] web app origin: ${config.frontendUrls.join(', ')}`);
-  if (config.jwtSecret.startsWith('dev-only') || config.jwtSecret.startsWith('change-me')) {
-    console.warn('[api] WARNING: JWT_SECRET is still the default. Change it before deploying.');
-  }
-  // Fail loudly at boot rather than on the first login if the database is unreachable.
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    console.log('[api] database connection OK');
-  } catch (error) {
-    console.error('[api] database connection FAILED:', error.message);
-    console.error('[api] check DATABASE_URL in .env (host, user, password, database name).');
-  }
-});
+// 1. ONLY start the persistent server if we are NOT running on Vercel.
+// Vercel automatically sets process.env.VERCEL="1" when deployed.
+if (!process.env.VERCEL) {
+  const server = app.listen(config.port, host, async () => {
+    console.log(`[api] listening on http://${host || 'localhost'}:${config.port} (${config.env})`);
+    console.log(`[api] web app origin: ${config.frontendUrls.join(', ')}`);
+    if (config.jwtSecret.startsWith('dev-only') || config.jwtSecret.startsWith('change-me')) {
+      console.warn('[api] WARNING: JWT_SECRET is still the default. Change it before deploying.');
+    }
+    // Fail loudly at boot rather than on the first login if the database is unreachable.
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      console.log('[api] database connection OK');
+    } catch (error) {
+      console.error('[api] database connection FAILED:', error.message);
+      console.error('[api] check DATABASE_URL in .env (host, user, password, database name).');
+    }
+  });
+}
+
+// 2. Export the app so Vercel can consume it as a Serverless Function
+module.exports = app;
 
 async function shutdown(signal) {
   console.log(`[api] ${signal} received, shutting down`);
