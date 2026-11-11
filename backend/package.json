@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "db:import": "node prisma/import-employees.js",
+    "postinstall": "prisma generate",
     "db:reset": "prisma migrate reset --force --skip-generate && node prisma/seed.js"
   },
   "prisma": {
