@@ -4,13 +4,6 @@ import { chromium } from 'playwright';
 const prisma = new PrismaClient();
 const WEB = 'http://localhost:3300';
 
-// Clear every device binding: the point of a fresh browser test is a fresh
-// device, and a leftover hash from an earlier run is a false mismatch.
-const cleared = await prisma.employee.updateMany({
-  data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 },
-});
-console.log(`cleared ${cleared.count} device binding(s)`);
-
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
 

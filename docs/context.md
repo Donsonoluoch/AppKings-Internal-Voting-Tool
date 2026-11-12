@@ -39,7 +39,7 @@
 | Backend | Express.js (JavaScript) |
 | ORM | Prisma |
 | Database | PostgreSQL |
-| Auth | Phone number + device binding, session via signed JWT in an httpOnly cookie |
+| Auth | Phone number, session via signed JWT in an httpOnly cookie; department on first login |
 | Hosting (suggested) | One VPS, or Render/Railway for the API and DB, Vercel for the frontend |
 
 The repo is a monorepo with three workspaces (`backend`, `frontend`, `packages/shared`).
@@ -55,7 +55,7 @@ appkings-voting/
 │  └─ supervisord(.dev).conf  local combined-process development runner
 ├─ backend/
 │  ├─ prisma/schema.prisma
-│  ├─ prisma/seed.js          categories, departments, demo people
+│  ├─ prisma/seed.js          categories, departments, workbook names/phones, Steve Martin admin
 │  ├─ prisma/import-employees.js   Phase 3 real employee import
 │  ├─ src/
 │  │  ├─ index.js
@@ -71,10 +71,9 @@ appkings-voting/
 └─ docs/                      this file + architecture, api, deploy, runbook, roadmap
 ```
 
-**Authentication limitation:** first sign-in accepts a registered phone number without
-verifying control of that number. Device binding blocks later browsers, but does not
-authenticate the first person to claim an account. SMS/OTP is deferred; do not use this
-as production identity verification until an approved verification flow exists.
+**Authentication limitation:** sign-in accepts a registered phone number without verifying
+control of it. There is no device lock or SMS/OTP challenge, so this is a trust-based
+internal login and does not prove identity.
 
 ---
 
@@ -83,26 +82,29 @@ as production identity verification until an approved verification flow exists.
 A user has one `role`: `EMPLOYEE`, `COMMITTEE` or `ADMIN`. Committee and Admin can also access the Employee portal features.
 
 ### Employee portal
-- Login and device registration
+- Sign in with a registered phone number; choose a department on first sign-in if needed
 - Submit nominations (Phase 1 only)
 - View shortlisted nominees (Phase 2 results and Phase 3)
 - Vote (Phase 3 only)
-- View phase results after the admin publishes them; view their own points after final publication
+- Open the shared Published results page at any time; only phases the admin has published are shown, with personal points available after final publication
 
 ### Committee portal
 - View submitted nominations
 - Review candidate details, justifications and evidence
 - Pick the strongest candidate per category (one pick per category, 1 point each)
 - Declare conflicts of interest
+- Open the shared Published results page
 
 ### Administrator portal
-- Import the 60 employees (CSV upload)
+- Import the real roster (seed reads only names and phone numbers)
 - Manage departments and employee eligibility
 - Open and close each phase (and move to the next one)
 - Review tallies and confirm the cuts (top 5 per category, minimum category coverage, and pooled limits after Phases 1 and 2), resolving ties
-- Reset devices
+- Assign roles and departments
 - View audit logs
 - Publish results for each closed phase
+- Open the shared Published results page separately from the publishing controls
+- Open the shared Published results page separately from the publishing controls
 
 ---
 
@@ -128,9 +130,9 @@ All three phases use the same mechanism: **point accumulation**. Each voter make
 
 | Phase | Who takes part | Action | Outcome |
 |-------|----------------|--------|---------|
-| 1 | All 60 employees | One nomination per category, with a justification | Top 5 per category; pooled **top 15 people** plus category-coverage candidates as needed |
+| 1 | All 57 roster accounts | One nomination per category, with a justification | Top 5 per category; pooled **top 15 people** plus category-coverage candidates as needed |
 | 2 | Committee members | One pick per category among Phase 2 candidates | Pooled **top 6–10 people** plus category-coverage candidates as needed |
-| 3 | All 60 employees | One vote per category among the shortlist | Most points in a category wins |
+| 3 | All 57 roster accounts | One vote per category among the shortlist | Most points in a category wins |
 
 ```
 NOT_STARTED → PHASE_1 (nominations) → PHASE_2 (committee) → PHASE_3 (final vote) → CLOSED → PUBLISHED
@@ -154,7 +156,7 @@ phase results remain admin-only.
 **Implementation:** `backend/src/lib/tally.js` (`computePhase1Tally`, `computePhase2Tally`, `cutProblems`, `applyCut`) and the pure math in `packages/shared/scoring.js` (`rankWithTies`, `pooledTotals`).
 
 ### Phase 1: Employee nominations
-- All 60 employees nominate **one colleague per category** (up to 8 nominations). Skipping a category is allowed.
+- All 57 roster accounts nominate **one colleague per category** (up to 8 nominations). Skipping a category is allowed.
 - Each nomination requires a **justification** (min. 20 characters).
 - Employees can change their nomination in a category until Phase 1 closes (`PUT /api/nominations` replaces it — unique on `(categoryId, nominatorId)`).
 - Self-nomination is allowed **once in total** across all categories. It counts as 1 point like any other nomination.
@@ -213,43 +215,45 @@ Tie-break chain for a pooled cut or a category winner: this phase's points, then
 
 ---
 
-## 7. Login and device binding
+## 7. Login and department onboarding
 
-The login is just a phone number, so the device lock is what keeps it secure.
+The login accepts a registered phone number. It does not verify control of that number;
+this is an intentional trust-based company workflow, not identity verification.
 
-**UI:** "2026 Employee Awards – Employee Recognition and Voting Portal" → phone input with `+254` prefix and `7XX XXX XXX` → **Continue**.
+**UI:** enter a phone number → if the employee has no department, choose one from the
+preseeded company departments → save and sign in. The application welcomes the employee
+by name after authentication. Later logins need only the phone number and work from any
+browser.
 
 **Rules**
-1. Phone numbers are imported by admin, so only registered numbers can log in.
-2. Normalize numbers to `+2547XXXXXXXX` before storing or comparing.
-3. **First login:** the server generates a random `deviceToken`, stores its **hash** against the employee, and sets the raw token in an httpOnly cookie, plus a copy in `localStorage` as a fallback.
-4. **Later logins:** phone number plus a matching device token are required. The user only types their number.
-5. **Different device or browser:** rejected with "This number is registered to another device. Contact an administrator."
-6. **Lost device:** admin clicks **Reset device**. This is allowed **once per employee** (`deviceResetCount < 1`). After the reset, the next login registers the new device.
-7. All resets and failed logins are written to the audit log.
-8. Rate limit login attempts (e.g. 10 per 15 min per IP) to prevent number-guessing. Only **failed** attempts count, so 60 staff behind one office IP don't lock each other out.
+1. Normalize numbers to `+2547XXXXXXXX` before storing or comparing.
+2. Unknown or inactive accounts cannot sign in.
+3. If an active employee has no department, the login endpoint returns the department
+   options without issuing a session. The employee selects one; the server saves it,
+   records `DEPARTMENT_ASSIGNED`, and then issues the session.
+4. A department already assigned to an employee cannot be changed through login; an
+   administrator can update it from the employee console.
+5. Login attempts are rate limited (default 10 failed attempts per 15 minutes per IP).
+   Only failed attempts count, so staff behind one office IP do not lock each other out.
 
 ```
-POST /api/auth/login
-  body: { phone, deviceToken? }
-  → looks up employee
-  → if no device registered: register this device, issue session
-  → if device registered and token matches: issue session
-  → else 403 DEVICE_MISMATCH
+POST /api/auth/login { phone }
+  → if department is missing: { requiresDepartment: true, departments: [...] }
+POST /api/auth/login { phone, departmentId }
+  → save department, issue session, return employee name and role
 ```
-
-**Known limitation:** a browser-based device lock can't distinguish a "device" from a "browser profile" (clearing cookies would lock the user out until an admin reset). Tell staff to use one browser, and don't use incognito mode.
 
 ---
 
 ## 8. Data model (Prisma)
 
-> **Note on departments:** `Department` is only here to support **Team of the Year** (a team can't be an `Employee`). If your team confirms that "team" means something else, or that Team of the Year is chosen differently, you can simplify: remove `Department`, and make Team of the Year nominees plain text team names stored in a small `Team` table. Nothing else in the system depends on departments.
+> Departments are used for Team of the Year and as employee profile data; the first-login
+> onboarding lets staff assign the missing department from the preseeded list.
 
 See `backend/prisma/schema.prisma` for the authoritative version. The models:
 
-- `Department` — teams (Team of the Year only).
-- `Employee` — name, phone, role, `eligible`, `active`, department, device binding (`deviceHash`, `deviceRegisteredAt`, `deviceResetCount`).
+- `Department` — company departments and Team of the Year nominees.
+- `Employee` — name, phone, role, `eligible`, `active` and department.
 - `Category` — 8 seeded categories, `criteria`, `forTeams`, `sortOrder`.
 - `Nomination` — `categoryId`, `nominatorId`, `nomineeId` **or** `nomineeDeptId`, `justification`, `isSelf`; `@@unique([categoryId, nominatorId])` (one per category, replaceable until Phase 1 closes).
 - `Candidate` — one row per category slot: `nominationPoints`, `committeePoints`, `finalPoints`, `inPhase2`, `inPhase3`.
@@ -282,7 +286,7 @@ Full request/response reference: `docs/api.md`.
 ### Auth
 | Method | Route | Notes |
 |--------|-------|-------|
-| POST | `/auth/login` | Phone login with device binding |
+| POST | `/auth/login` | Phone login; first login can assign a department |
 | POST | `/auth/logout` | Clears the cookie |
 | GET | `/auth/me` | Current user, current phase and the rules the UI renders |
 | GET | `/health`, `/health/ready` | Liveness / readiness (database check) |
@@ -321,7 +325,6 @@ Full request/response reference: `docs/api.md`.
 | GET | `/admin/tally` | Per-category ranking, the pooled people ranking and tie flags for the closed phase |
 | POST | `/admin/candidates/confirm` | Confirms the cut (resolves ties) |
 | POST | `/admin/candidates/:id/remove` | Remove an ineligible candidate before the cut |
-| POST | `/admin/devices/:id/reset` | One reset per employee |
 | GET | `/admin/audit` | Paginated audit log |
 | GET | `/admin/results` | All phase tallies and overall totals (admin view) |
 | POST | `/admin/publish` | Publishes one closed phase to everyone |
@@ -356,12 +359,12 @@ Full request/response reference: `docs/api.md`.
 /employee                 Dashboard: current phase banner + what to do now
 /employee/nominate        Phase 1: pick category, colleague, justification
 /employee/vote            Phase 3: one card group per category, confirm dialog
-/employee/results         Published phase results; "Your points" after final publication
+/employee/results         Shared published phase results for every signed-in role; "Your points" after final publication
 /committee                Category tabs → candidate list
 /committee/candidate/[id] Details, justifications, conflict declaration
 /committee/vote           Pick one candidate per category
 /admin                    Phase control + progress stats
-/admin/employees          Import, edit, reset device
+/admin/employees          Import roster, edit roles, departments and access
 /admin/audit              Audit log
 /admin/tally              Rankings, ties and cut confirmation
 /admin/results            Phase results, overall totals and per-phase publish controls
@@ -379,7 +382,7 @@ UI guidance (keep it light):
 ## 13. Security checklist (minimum for reliability)
 
 - JWT in an **httpOnly, Secure, SameSite=Lax** cookie, with a 12-hour expiry.
-- Hash device tokens (SHA-256). Never store them raw.
+- Phone-only sign-in is trust-based and does not prove phone ownership; use OTP if that assurance is required.
 - Rate limit `/auth/login` (`express-rate-limit`).
 - Validate all input with `zod`.
 - CORS restricted to the frontend origin only, with credentials.
@@ -419,8 +422,8 @@ The delivery is split into three phases — see `docs/roadmap.md` for what "done
 
 | Day | Goal | Done when |
 |-----|------|-----------|
-| **Wed** | Repo, Prisma schema, migrations, seed (categories + one admin), Express skeleton, **login with device binding**, role/phase middleware, audit helper | You can log in as admin from one device and get blocked from another |
-| **Thu** | Admin: CSV import, employee list, phase control, device reset. Employee: nomination page (one pick per category) and API | 60 employees imported, nominations saved with rules enforced |
+| **Wed** | Repo, Prisma schema, migrations, roster seed, Express skeleton, phone login, role/phase middleware, audit helper | Registered users can sign in; missing departments can be assigned |
+| **Thu** | Admin: employee list, role/department management, phase control. Employee: nomination page (one pick per category) and API | Roster loaded, nominations saved with rules enforced |
 | **Fri** | Phase 1 tally: top 5 per category, protected minimum coverage and pooled top 15 (`pooledTotals`, `rankWithTies`), admin tally view and cut confirmation. Committee portal: candidate list, picks, conflicts. Phase 2 cut (6–10) | A full Phase 1 → 2 → 3 transition works with test data |
 | **Sat** | Phase 3 voting (transaction, receipts), results from point totals, publish, results page and `/results/me` | A full end-to-end run with 5–10 test users |
 | **Sun** | Audit log page, polish, mobile check, error messages, load test with ~60 logins | No blocking bugs, tested on real phones |
@@ -428,14 +431,14 @@ The delivery is split into three phases — see `docs/roadmap.md` for what "done
 
 **Cut list if time is short** (in this order): audit log UI (keep the DB writes), conflict-of-interest UI, CSV import (use a seed script), results page styling.
 
-**Must not be cut:** device binding, phase gating, vote transaction and receipt, the top 15 and 6–10 cut checks.
+**Must not be cut:** role/phase gating, vote transaction and receipt, the top 15 and 6–10 cut checks.
 
 ---
 
 ## 16. Testing checklist (do this Sunday)
 
-- [ ] Login on device A works. The same number on device B is rejected.
-- [ ] Admin resets device once. The second reset is refused.
+- [ ] Same registered number can sign in from separate browser contexts.
+- [ ] An employee without a department is asked to select one; later sign-ins need only the phone number.
 - [ ] A nomination outside Phase 1 is rejected.
 - [ ] First self-nomination in Phase 1 is accepted. A second self-nomination (any category) is rejected.
 - [ ] Self-nomination is rejected outside Phase 1.

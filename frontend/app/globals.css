@@ -4,9 +4,12 @@
 
 :root {
   color-scheme: light;
-  --appkings-navy: #071a3b;
-  --appkings-blue: #0e3c83;
-  --appkings-orange: #ff542e;
+  --appkings-navy: #091b36;
+  --appkings-blue: #174b8d;
+  --appkings-orange: #f45b3c;
+  --surface: #ffffff;
+  --surface-muted: #f6f8fb;
+  --line: #e4eaf2;
 }
 
 html,
@@ -17,8 +20,14 @@ body {
 body {
   @apply bg-slate-50 text-ink antialiased;
   background-image:
-    radial-gradient(ellipse at 92% 10%, rgba(32, 105, 197, 0.08), transparent 30rem),
-    radial-gradient(ellipse at 2% 55%, rgba(32, 105, 197, 0.045), transparent 24rem);
+    radial-gradient(ellipse at 92% 0%, rgba(32, 105, 197, 0.08), transparent 34rem),
+    radial-gradient(ellipse at 0% 50%, rgba(32, 105, 197, 0.035), transparent 30rem);
+  font-feature-settings: "ss01" on;
+}
+
+::selection {
+  color: #fff;
+  background: #174b8d;
 }
 
 button,
@@ -31,31 +40,35 @@ textarea {
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_28px_rgba(12,36,72,0.06)];
+    @apply rounded-2xl border bg-white p-5 shadow-[0_10px_30px_rgba(12,36,72,0.045)];
+    border-color: var(--line);
+  }
+  .card-interactive {
+    @apply transition duration-200 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_14px_34px_rgba(12,36,72,0.09)];
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition duration-150
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition duration-150
       focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-accent-500 text-white shadow-sm hover:bg-accent-600;
+    @apply btn bg-accent-500 text-white shadow-[0_5px_12px_rgba(244,91,60,0.18)] hover:-translate-y-px hover:bg-accent-600 hover:shadow-[0_8px_18px_rgba(244,91,60,0.23)];
   }
   .btn-secondary {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:border-brand-200 hover:bg-brand-50;
+    @apply btn border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700;
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base transition
-      placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-base shadow-sm transition
+      placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-slate-700;
+    @apply mb-1.5 block text-sm font-semibold text-slate-700;
   }
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
   }
   .link {
     @apply font-medium text-brand-700 underline-offset-2 hover:underline;
@@ -63,16 +76,40 @@ textarea {
 
   .app-shell {
     background-image:
-      linear-gradient(180deg, rgba(246, 249, 253, 0.75), rgba(246, 249, 253, 0) 22rem),
-      radial-gradient(ellipse at 100% 0%, rgba(32, 105, 197, 0.08), transparent 28rem);
+      linear-gradient(180deg, rgba(246, 249, 253, 0.8), rgba(246, 249, 253, 0) 26rem),
+      radial-gradient(ellipse at 100% 0%, rgba(32, 105, 197, 0.07), transparent 32rem);
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl;
+  }
+
+  .table-head {
+    @apply border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500;
+  }
+
+  .table-row {
+    @apply border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/80;
   }
 
   .login-backdrop {
     background-color: var(--appkings-navy);
     background-image:
-      radial-gradient(ellipse at 50% 45%, rgba(23, 76, 151, 0.46), transparent 55%),
-      linear-gradient(30deg, transparent 48%, rgba(48, 113, 197, 0.14) 49%, rgba(48, 113, 197, 0.14) 50%, transparent 51%),
-      linear-gradient(150deg, transparent 48%, rgba(48, 113, 197, 0.12) 49%, rgba(48, 113, 197, 0.12) 50%, transparent 51%);
-    background-size: auto, 76px 132px, 76px 132px;
+      radial-gradient(ellipse at 50% 40%, rgba(23, 76, 151, 0.58), transparent 55%),
+      radial-gradient(ellipse at 50% 100%, rgba(244, 91, 60, 0.15), transparent 42%),
+      linear-gradient(30deg, transparent 48%, rgba(48, 113, 197, 0.12) 49%, rgba(48, 113, 197, 0.12) 50%, transparent 51%),
+      linear-gradient(150deg, transparent 48%, rgba(48, 113, 197, 0.1) 49%, rgba(48, 113, 197, 0.1) 50%, transparent 51%);
+    background-size: auto, auto, 76px 132px, 76px 132px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

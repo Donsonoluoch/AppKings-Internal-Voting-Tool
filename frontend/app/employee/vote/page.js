@@ -20,15 +20,22 @@ function Vote() {
   const [confirm, setConfirm] = useState(null); // { categoryId, candidateId, name }
   const [busy, setBusy] = useState(false);
 
-  const load = () => {
+  const load = async () => {
     setLoading(true);
-    get('/shortlist')
-      .then((data) => setCategories(data.categories))
-      .catch((loadError) => setError(loadError.message))
-      .finally(() => setLoading(false));
+    setError('');
+    try {
+      const data = await get('/shortlist');
+      setCategories(data.categories);
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const submitVote = async () => {
     if (!confirm) return;
@@ -42,7 +49,7 @@ function Vote() {
         delete next[confirm.categoryId];
         return next;
       });
-      load();
+      await load();
     } catch (voteError) {
       setError(voteError.message);
       setConfirm(null);
@@ -52,6 +59,7 @@ function Vote() {
   };
 
   const votedCount = categories.filter((category) => category.hasVoted).length;
+  const selectedCount = categories.filter((category) => !category.hasVoted && selections[category.id]).length;
 
   return (
     <AppShell
@@ -64,23 +72,44 @@ function Vote() {
         </Alert>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-        <StatusPill tone={votedCount === categories.length && categories.length > 0 ? 'green' : 'brand'}>
-          {votedCount} of {categories.length} categories voted
-        </StatusPill>
-        <span className="text-slate-500">
-          No campaigning, lobbying or vote solicitation. Votes are final once submitted.
-        </span>
-      </div>
+      <section className="card mb-5 !p-4 sm:!p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <StatusPill tone={votedCount === categories.length && categories.length > 0 ? 'green' : 'brand'}>
+              {votedCount} of {categories.length} votes submitted
+            </StatusPill>
+            <StatusPill tone="slate">{selectedCount} selection{selectedCount === 1 ? '' : 's'} ready</StatusPill>
+          </div>
+          <span className="text-xs text-slate-500">Votes are confidential and final once submitted.</span>
+        </div>
+      {categories.length > 0 && (
+        <div
+          className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
+          role="progressbar"
+          aria-label="Voting progress"
+          aria-valuemin={0}
+          aria-valuemax={categories.length}
+          aria-valuenow={votedCount}
+        >
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-brand-600 to-emerald-500 transition-all"
+            style={{ width: `${(votedCount / categories.length) * 100}%` }}
+          />
+        </div>
+      )}
+      </section>
 
       <Alert tone="error" className="mb-4">{error}</Alert>
       {loading && <Spinner label="Loading the shortlist…" />}
+      {!loading && categories.length === 0 && !error && (
+        <Alert tone="warning">No final-vote shortlist is available yet. Please check back when voting opens.</Alert>
+      )}
 
       <div className="space-y-6">
         {categories.map((category) => (
           <section key={category.id} className="card">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">{category.name}</h2>
+              <h2 className="text-base font-bold text-slate-900">{category.name}</h2>
               {category.hasVoted ? (
                 <StatusPill tone="green">Vote recorded</StatusPill>
               ) : (
@@ -88,14 +117,14 @@ function Vote() {
               )}
             </div>
 
-            <fieldset disabled={category.hasVoted || phase !== 'PHASE_3'} className="space-y-2">
+            <fieldset disabled={category.hasVoted || phase !== 'PHASE_3' || busy} className="space-y-2">
               <legend className="sr-only">{category.name}</legend>
               {category.candidates.map((candidate) => {
                 const selected = selections[category.id] === candidate.id;
                 return (
                   <label
                     key={candidate.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm transition ${selected ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-sm transition ${selected ? 'border-brand-400 bg-brand-50 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200 hover:bg-slate-50'
                       } ${category.hasVoted ? 'cursor-not-allowed opacity-70' : ''}`}
                   >
                     <input
@@ -119,7 +148,7 @@ function Vote() {
               <button
                 type="button"
                 className="btn-primary mt-3 w-full sm:w-auto"
-                disabled={!selections[category.id] || phase !== 'PHASE_3'}
+                disabled={!selections[category.id] || phase !== 'PHASE_3' || busy}
                 onClick={() => {
                   const candidate = category.candidates.find((item) => item.id === selections[category.id]);
                   setConfirm({ categoryId: category.id, candidateId: candidate.id, name: candidate.name, categoryName: category.name });

@@ -6,39 +6,39 @@ this file is the sequence and the definition of done.
 
 | Phase | Name | The system in one line | Exit check |
 |-------|------|------------------------|------------|
-| 1 | **Scaffold** | Every page, route, rule and container exists; demo data proves the flows | `npm run test`, `npm run lint`, `npm run smoke` all pass |
+| 1 | **Scaffold** | Every page, route, rule and container exists; test data proves the flows | `npm run test`, `npm run lint`, `npm run smoke` all pass |
 | 2 | **Completion** | Nothing is cut; UX, audit, exports and go-live tooling are finished | Team run-through on phones with test users, no blocking bugs |
-| 3 | **Seeding & go-live** | Real 60 employees loaded, device binding proven, Phase 1 opened | Admin has opened Phase 1 and taken a database backup |
+| 3 | **Seeding & go-live** | Real roster loaded, phone sign-in and department onboarding proven, Phase 1 opened | Admin has opened Phase 1 and taken a database backup |
 
 ---
 
 ## Phase 1 — Scaffold (done)
 
 **Goal:** the whole system is wired end to end so the team can see and test the real
-behaviour, with demo people standing in for the staff.
+behaviour, with a test dataset standing in for the staff.
 
 Included:
 
 - Monorepo (`backend`, `frontend`, `packages/shared`) and the points-only scoring model.
 - Prisma schema + migration for every model in context §8 (nominations, candidates with
-  saved points, committee picks, conflicts, confidential votes + receipts, audit log,
-  settings, device binding).
+  saved points, committee picks, conflicts, confidential votes + receipts, audit log and
+  settings).
 - All API routes in context §10, with phase gating, role gating and the §11 rules enforced
   server-side.
 - All pages in context §12, including `/admin/tally` and `/results/me`.
-- Login with device binding, single device reset, audit writes.
+- Registered phone login, first-login department assignment and audit writes.
 - Two production containers (`web` and `api` + PostgreSQL), with the database persisted
   in a named volume (`Dockerfile`, `infra/docker-compose.yml`).
-- Seed with the 8 categories, 5 departments and 25 demo people (enough to exercise the
-  top-5 / top-15 cuts).
+- Seed categories, company departments and roster names/phones; Steve Martin is the
+  initial Finance admin.
 - Tests: shared scoring unit tests, backend unit tests, `npm run smoke` for the full phase
   flow.
 
 **Not included at this stage:** production employees, polished empty states, exports,
 backup automation — they land in phase 2 and 3.
 
-**Demo:** `npm run db:reset && npm run dev`, log in as `+254700000001`, move the phase
-through to `PUBLISHED` using demo nominations.
+**Local run:** seed from the workbook, run `npm run dev`, then sign in using the configured
+admin phone. Use a disposable database for cycle tests.
 
 ---
 
@@ -62,7 +62,7 @@ Work items:
 7. **Load check** — 60 simulated logins and votes in 15 minutes; confirm rate limiting
    (failed attempts only) behaves behind one office IP.
 8. **Accuracy review** — recompute one category by hand and compare with `/admin/results`.
-9. **Handover pack** — short guides for staff (one device, no incognito), committee members,
+9. **Handover pack** — short guides for staff, committee members,
    and the admin on duty.
 10. **Real linting** — add ESLint (`eslint-config-next`) and replace `next lint` in
     `frontend/package.json`; `npm run lint` currently type-checks by building the app.
@@ -74,75 +74,29 @@ person, not the person who built it.
 
 ## Phase 3 — Seeding employee data and go-live
 
-**Goal:** real people, real devices, Phase 1 open. No demo data left.
+**Goal:** real people, department onboarding, Phase 1 open. No local demo accounts remain.
 
 Order matters — do these in sequence:
 
 1. **Back up** the current database: see `docs/deploy.md` → *Backups*.
-2. **Prepare `employees.csv`** with the 60 staff:
-
-   ```csv
-   fullName,phone,department,role
-   Grace Wanjiru,0712345678,Operations,ADMIN
-   Peter Otieno,0723456789,Engineering,COMMITTEE
-   Brian Kamau,0734567890,Engineering,EMPLOYEE
-   ```
-
-   - `role` is `EMPLOYEE` (default), `COMMITTEE` or `ADMIN`.
-   - Phones can be `07…`, `2547…` or `+2547…`; they are normalised to `+2547XXXXXXXX`.
-   - At least one `ADMIN` and the committee members must be in the file.
-   - Departments are created on the fly; they only matter for Team of the Year.
-
-3. **Dry run the import** (writes nothing):
-
-   ```bash
-   npm run db:import -- ./employees.csv
-   ```
-
-   Check the counts, the skipped rows and the "would create / would update" numbers.
-
-4. **Apply it** (safe to re-run; employees are matched by phone):
-
-   ```bash
-   npm run db:import -- ./employees.csv --apply
-   ```
-
-   Add `--deactivate-missing` to switch off anyone who left the company and is not in the
-   file.
-
-5. **Remove the demo accounts** (optional but recommended). They all live on
-   `+2547000000XX` and nobody else does, so switching them off is one statement — run it
-   with `docker compose exec api psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"`:
-
-   ```sql
-   UPDATE "Employee" SET active = false WHERE phone LIKE '+2547000000%';
-   ```
-
-   The 8 categories, the departments used by the real staff and the `Settings` row are kept.
-   Production starts with `SEED_DEMO=false`, so no demo accounts should exist when this
-   step begins.
-
-6. **Verify the data** — `/admin/employees` shows 60 active people with the right roles,
-   and `/admin` shows 60 active employees and the correct number of devices pending.
-   If the count is off, the dry run in step 3 lists every skipped CSV row and why.
-
-7. **Prove device binding on two real phones** with the same test number:
-
-   - Phone A logs in → succeeds, device registered.
-   - Phone B, same number → "This number is registered to another device."
-   - Admin resets the device once → Phone B can now register.
-   - A second reset is refused.
-
-8. **Take the go-live backup** and note the file name in the runbook
+2. **Seed from the approved workbook** using the one-time procedure in `docs/deploy.md`.
+   Only names and phone numbers are imported. The later duplicate phone is skipped; Steve
+   Martin is assigned the matching admin number and Finance department.
+3. **Verify the roster** — `/admin/employees` shows 57 accounts: Steve as ADMIN, all other
+   accounts as EMPLOYEE, and no roster phone duplicated.
+4. **Assign roles** — Steve updates the committee members and any additional admins from
+   `/admin/employees`.
+5. **Verify onboarding** on a disposable account without a department. The first login
+   requests a department; after saving, the next login asks only for the phone number.
+6. **Take the go-live backup** and note the file name in the runbook
    (`docs/runbook.md` → *Go-live log*).
+7. **Open Phase 1** — `/admin` → *Move to Phase 1 — Nominations*, with the typed
+   confirmation. Tell staff that phone-only sign-in is trust-based and does not verify
+   phone ownership.
+8. **Watch the first hour** — `npm run docker:logs`, `/admin/audit` for failed logins,
+   `/admin` for employees who still need to choose a department.
 
-9. **Open Phase 1** — `/admin` → *Move to Phase 1 — Nominations*, with the typed
-   confirmation. Tell staff which browser to use and that incognito mode will lock them out.
-
-10. **Watch the first hour** — `npm run docker:logs`, `/admin/audit` for failed logins,
-    `/admin/dashboard` for pending devices.
-
-Exit check: Phase 1 is open, 60 employees are active, the first nominations have landed,
+Exit check: Phase 1 is open, all 57 accounts are active, the first nominations have landed,
 and a backup taken after the import exists.
 
 ---
@@ -152,6 +106,5 @@ and a backup taken after the import exists.
 | Situation | What to do |
 |-----------|------------|
 | Import looked wrong | Re-run with a corrected CSV — it updates by phone. Nothing else is touched. |
-| Bad demo data in a real database | Restore the backup from step 1 (`docs/deploy.md` → *Restore*). |
+| Incorrect roster seed in a real database | Restore the backup from step 1 (`docs/deploy.md` → *Restore*). |
 | A phase was opened by mistake | Phases only move forward by design. Fix at the database level and record it in the audit log (context §11). |
-| Someone lost their device twice | Second reset is refused on purpose; escalate to a second admin and fix manually with an audit note. |

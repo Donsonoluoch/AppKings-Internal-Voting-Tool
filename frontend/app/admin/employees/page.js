@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import AppShell from '@/components/AppShell';
 import Alert from '@/components/Alert';
 import Spinner from '@/components/Spinner';
-import StatusPill from '@/components/StatusPill';
 import { get, patch, post } from '@/lib/api';
 
 const CSV_TEMPLATE = `fullName,phone,department,role
@@ -70,21 +69,8 @@ function Employees() {
     }
   };
 
-  const resetDevice = async (employee) => {
-    if (!window.confirm(`Reset the registered device for ${employee.fullName}? This can only be done once.`)) return;
-    setError('');
-    setSuccess('');
-    try {
-      await post(`/admin/devices/${employee.id}/reset`);
-      setSuccess(`${employee.fullName} can now register a new device on their next login.`);
-      load();
-    } catch (resetError) {
-      setError(resetError.message);
-    }
-  };
-
   return (
-    <AppShell title="Employees & devices" description="Import the team, manage eligibility, departments and device resets." minRole="ADMIN">
+    <AppShell title="Employees" description="Import the roster and manage roles, departments, eligibility and account access." minRole="ADMIN">
       <Alert tone="error" className="mb-3">{error}</Alert>
       <Alert tone="success" className="mb-3">{success}</Alert>
 
@@ -149,7 +135,7 @@ function Employees() {
                   <th className="py-2 pr-3">Role</th>
                   <th className="py-2 pr-3">Department</th>
                   <th className="py-2 pr-3">Eligible</th>
-                  <th className="py-2 pr-3">Device</th>
+                  <th className="py-2 pr-3">Access</th>
                 </tr>
               </thead>
               <tbody>
@@ -194,23 +180,6 @@ function Employees() {
                       />
                     </td>
                     <td className="py-2 pr-3">
-                      {employee.hasDevice ? (
-                        <div className="flex items-center gap-2">
-                          <StatusPill tone={employee.deviceResetCount >= 1 ? 'amber' : 'green'}>
-                            {employee.deviceResetCount >= 1 ? 'reset used' : 'registered'}
-                          </StatusPill>
-                          <button
-                            type="button"
-                            className="text-xs font-medium text-brand-700 hover:underline disabled:text-slate-400 disabled:no-underline"
-                            onClick={() => resetDevice(employee)}
-                            disabled={employee.deviceResetCount >= 1}
-                          >
-                            Reset
-                          </button>
-                        </div>
-                      ) : (
-                        <StatusPill tone="slate">not yet</StatusPill>
-                      )}
                       <button
                         type="button"
                         className="ml-2 text-xs text-slate-500 hover:underline"

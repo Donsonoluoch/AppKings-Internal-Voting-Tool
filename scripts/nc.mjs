@@ -2,7 +2,6 @@ import { PrismaClient } from '@prisma/client';
 import { chromium } from 'playwright';
 
 const prisma = new PrismaClient();
-await prisma.employee.updateMany({ data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 } });
 const before = await prisma.nomination.count();
 
 const browser = await chromium.launch();

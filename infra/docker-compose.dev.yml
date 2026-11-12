@@ -1,15 +1,15 @@
-# Development stack with hot reload. Source is bind-mounted; node_modules lives in a named
+﻿# Development stack with hot reload. Source is bind-mounted; node_modules lives in a named
 # volume so host binaries never leak into the containers.
 #
-#   npm run dev:stack              → db + both apps in ONE container (supervisord, hot reload)
-#   npm run dev:split              → db + api + web as separate containers
-#   npm run dev:api                → db + api only (nothing published except the API)
-#   npm run dev:web                → db + web only
+#   npm run dev:stack              â†’ db + both apps in ONE container (supervisord, hot reload)
+#   npm run dev:split              â†’ db + api + web as separate containers
+#   npm run dev:api                â†’ db + api only (nothing published except the API)
+#   npm run dev:web                â†’ db + web only
 #   npm run dev:stack:down         (keeps the database)
 #   npm run dev:stack:reset        (wipes the database too)
 #
-# Migrations run on every start; the seed only runs when the database is empty, so demo
-# data is created once and your local nominations/votes survive a restart.
+# Migrations run on every start; the seed only runs when the database is empty, so the
+# local roster is created once and nominations/votes survive a restart.
 name: appkings-voting-dev
 
 x-dev-env: &dev-env
@@ -17,7 +17,7 @@ x-dev-env: &dev-env
   DATABASE_URL: postgresql://${POSTGRES_USER:-appkings}:${POSTGRES_PASSWORD:-appkings}@db:5432/${POSTGRES_DB:-appkings_voting}
   JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-before-deploying-32chars}
   SESSION_HOURS: ${SESSION_HOURS:-12}
-  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3300}
   COOKIE_SECURE: "false"
   TRUST_PROXY: 1
   SELF_NOMINATION_LIMIT: ${SELF_NOMINATION_LIMIT:-1}
@@ -29,7 +29,6 @@ x-dev-env: &dev-env
   MIN_CANDIDATES_PER_CATEGORY: ${MIN_CANDIDATES_PER_CATEGORY:-2}
   TEAM_FINALISTS: ${TEAM_FINALISTS:-3}
   COMMITTEE_PICKS_PER_CATEGORY: ${COMMITTEE_PICKS_PER_CATEGORY:-1}
-  SEED_DEMO: ${SEED_DEMO_DEV:-true}
   CHOKIDAR_USEPOLLING: "true"
   WATCHPACK_POLLING: "true"
 
@@ -42,7 +41,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-appkings}
       POSTGRES_DB: ${POSTGRES_DB:-appkings_voting}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-127.0.0.1:5442}:5432"
     volumes:
       - db_data_dev:/var/lib/postgresql/data
     healthcheck:
@@ -76,7 +75,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       RUN_SEED: ${RUN_SEED_DEV:-auto}
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_PORT:-3300}:3000"
     volumes:
       - ..:/app
       - node_modules_dev:/app/node_modules
@@ -101,7 +100,7 @@ services:
       API_HOST: 0.0.0.0
       RUN_SEED: ${RUN_SEED_DEV:-auto}
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "${API_PORT:-3301}:4000"
     volumes:
       - ..:/app
       - node_modules_dev:/app/node_modules
@@ -125,7 +124,7 @@ services:
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_PORT:-3300}:3000"
     volumes:
       - ..:/app
       - node_modules_dev:/app/node_modules

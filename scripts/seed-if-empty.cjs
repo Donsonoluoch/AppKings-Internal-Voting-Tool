@@ -16,7 +16,7 @@ async function main() {
   await prisma.$disconnect();
 
   if (mode === 'auto' && employees > 0) {
-    console.log(`[seed] ${employees} employee(s) already exist; skipping demo seed`);
+    console.log(`[seed] ${employees} employee(s) already exist; skipping roster seed`);
     return;
   }
 

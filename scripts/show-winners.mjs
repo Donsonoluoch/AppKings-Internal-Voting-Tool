@@ -2,9 +2,6 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const BASE = 'http://localhost:3300';
 
-// Clear device bindings so a fresh sign-in is allowed.
-await prisma.employee.updateMany({ data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 } });
-
 const res = await fetch(`${BASE}/api/auth/login`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },

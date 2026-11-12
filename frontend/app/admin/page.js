@@ -8,9 +8,11 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import Spinner from '@/components/Spinner';
 import StatusPill from '@/components/StatusPill';
 import { get, post } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { PHASE_META, PHASES } from '@appkings/shared';
 
 function AdminHome() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -50,7 +52,7 @@ function AdminHome() {
     try {
       await post('/admin/reset-cycle', { confirm: 'RESET' });
       setConfirmNewSession(false);
-      setSuccess('New voting session started. The cycle is ready for Phase 1.');
+      setSuccess('Voting progress reset. The cycle is ready to start Phase 1.');
       load();
     } catch (resetError) {
       setError(resetError.message);
@@ -73,11 +75,18 @@ function AdminHome() {
 
   return (
     <AppShell title="Administrator" description="Phase control, progress and the road to go live." minRole="ADMIN">
+      {user && <p className="mb-4 text-sm text-slate-600">Welcome back, <strong className="text-slate-900">{user.fullName}</strong>.</p>}
       <div className="grid gap-4 md:grid-cols-3">
         <section className="card md:col-span-2">
-          <h2 className="text-base font-semibold">Phase control</h2>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-700">Control center</p>
+              <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">Phase control</h2>
+            </div>
+            <StatusPill tone={data.phase === 'PUBLISHED' ? 'green' : 'brand'}>{PHASE_META[data.phase]?.label ?? data.phase}</StatusPill>
+          </div>
           <p className="mt-1 text-sm text-slate-600">
-            Current phase: <strong>{PHASE_META[data.phase]?.label ?? data.phase}</strong>. Phases only move forward.
+            Phases move forward in order. Review readiness before opening the next stage.
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -100,7 +109,7 @@ function AdminHome() {
               come from the API and are the ones the transition itself runs, so
               a blocked move is explained here rather than refused on click. */}
           {next && data.readiness ? (
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">
                   Before moving to {PHASE_META[next]?.label ?? next}
@@ -137,30 +146,29 @@ function AdminHome() {
               <p className="text-sm text-slate-600">The cycle is complete.</p>
             )}
           </div>
-          {data.phase === 'PUBLISHED' && (
-            <button
-              type="button"
-              className="btn-secondary mt-3"
-              onClick={() => setConfirmNewSession(true)}
-              disabled={busy}
-            >
-              Start a new voting session
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn-secondary mt-4"
+            onClick={() => setConfirmNewSession(true)}
+            disabled={busy}
+          >
+            Reset voting progress
+          </button>
           <Alert tone="error" className="mt-3">{error}</Alert>
           <Alert tone="success" className="mt-3">{success}</Alert>
         </section>
 
         <section className="card">
-          <h2 className="text-base font-semibold">At a glance</h2>
-          <dl className="mt-2 space-y-2 text-sm">
-            <div className="flex justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-700">Overview</p>
+          <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">At a glance</h2>
+          <dl className="mt-4 space-y-3 text-sm">
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3.5 py-3">
               <dt className="text-slate-500">Active employees</dt>
-              <dd className="font-semibold">{data.activeEmployees}</dd>
+              <dd className="text-lg font-bold text-slate-900">{data.activeEmployees}</dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Devices not registered</dt>
-              <dd className="font-semibold">{data.pendingDevices}</dd>
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3.5 py-3">
+              <dt className="text-slate-500">Departments to confirm</dt>
+              <dd className="text-lg font-bold text-slate-900">{data.employeesMissingDepartment}</dd>
             </div>
           </dl>
           <div className="mt-3 flex flex-col gap-2 text-sm">
@@ -169,7 +177,7 @@ function AdminHome() {
                 Tallies, ties and the cut →
               </Link>
             )}
-            <Link href="/admin/employees" className="link">Employees & devices →</Link>
+            <Link href="/admin/employees" className="link">Employees & departments →</Link>
             <Link href="/admin/results" className="link">Results & publishing →</Link>
             <Link href="/admin/audit" className="link">Audit log →</Link>
           </div>
@@ -177,32 +185,32 @@ function AdminHome() {
       </div>
 
       <section className="mt-6 card overflow-x-auto">
-        <h2 className="mb-3 text-base font-semibold">Category progress</h2>
+        <h2 className="mb-4 text-lg font-bold tracking-tight text-slate-900">Category progress</h2>
         <table className="w-full min-w-[560px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="py-2 pr-3">Category</th>
-              <th className="py-2 pr-3">Candidates</th>
-              <th className="py-2 pr-3">Phase 2 (top {data.rules.phase1Finalists} + coverage)</th>
-              <th className="py-2 pr-3">
+              <th className="table-head py-3 pr-3">Category</th>
+              <th className="table-head py-3 pr-3">Candidates</th>
+              <th className="table-head py-3 pr-3">Phase 2 (top {data.rules.phase1Finalists} + coverage)</th>
+              <th className="table-head py-3 pr-3">
                 Shortlist ({data.rules.phase2FinalistsMin}–{data.rules.phase2FinalistsMax} + coverage)
               </th>
-              <th className="py-2 pr-3">Voted</th>
+              <th className="table-head py-3 pr-3">Voted</th>
             </tr>
           </thead>
           <tbody>
             {data.categories.map((category) => (
-              <tr key={category.id} className="border-b border-slate-100 last:border-0">
-                <td className="py-2 pr-3 font-medium">{category.name}</td>
-                <td className="py-2 pr-3">
+              <tr key={category.id} className="table-row">
+                <td className="py-3 pr-3 font-semibold text-slate-800">{category.name}</td>
+                <td className="py-3 pr-3">
                   <StatusPill tone={category.candidates >= data.rules.minCandidatesPerCategory ? 'green' : 'slate'}>
                     {category.candidates}
                   </StatusPill>
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3 pr-3">
                   <StatusPill tone={category.inPhase2 ? 'green' : 'slate'}>{category.inPhase2}</StatusPill>
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3 pr-3">
                   <StatusPill
                     tone={
                       category.inPhase3 >= data.rules.minCandidatesPerCategory
@@ -215,7 +223,7 @@ function AdminHome() {
                     {category.inPhase3}
                   </StatusPill>
                 </td>
-                <td className="py-2 pr-3 text-slate-600">
+                <td className="py-3 pr-3 text-slate-600">
                   {category.voters}/{data.activeEmployees}
                 </td>
               </tr>
@@ -236,20 +244,23 @@ function AdminHome() {
         <p>{confirm ? PHASE_META[confirm]?.tagline : ''}</p>
         <p className="mt-2">
           The system checks that the cut is confirmed, no tie is unresolved and every category keeps at least{' '}
-          {data.rules.minCandidatesPerCategory} candidates. Phases cannot be reversed from the UI — if you make a
-          mistake, fix it at the database level and record it in the audit log.
+          {data.rules.minCandidatesPerCategory} candidates. Phases only move forward. Resetting returns the cycle to
+          NOT_STARTED; start Phase 1 separately when you are ready.
         </p>
       </ConfirmDialog>
       <ConfirmDialog
         open={confirmNewSession}
-        title="Start a new voting session?"
-        confirmLabel="Start new session"
+        title="Reset voting progress?"
+        confirmLabel="Reset voting progress"
         requireText="RESET"
         busy={busy}
         onCancel={() => setConfirmNewSession(false)}
         onConfirm={startNewSession}
       >
-        <p>This clears the previous session&apos;s nominations, votes, cuts and published results. Employee accounts and device locks are retained.</p>
+        <p>
+          This permanently clears all nominations, votes, committee picks, conflicts, candidate cuts and published
+          results. It does not delete employee accounts or change their roles or departments.
+        </p>
         <p className="mt-2">Type RESET to return the cycle to NOT_STARTED.</p>
       </ConfirmDialog>
     </AppShell>
