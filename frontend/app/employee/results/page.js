@@ -6,7 +6,6 @@ import Alert from '@/components/Alert';
 import ResultsTable from '@/components/ResultsTable';
 import Spinner from '@/components/Spinner';
 import { get } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
 
 function MyPoints() {
   const [mine, setMine] = useState(null);
@@ -67,7 +66,6 @@ function MyPoints() {
 }
 
 function Results() {
-  const { phase } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
@@ -77,7 +75,7 @@ function Results() {
       .catch((loadError) => setError(loadError.message));
   }, []);
 
-  const publishedPhases = [
+  const phases = [
     {
       key: 'phase1',
       title: 'Phase 1 — Nominations',
@@ -99,29 +97,43 @@ function Results() {
       scoreLabel: 'final votes',
       results: data?.results,
     },
-  ].filter((item) => data?.publications?.[item.key]);
+  ];
 
   return (
-    <AppShell title="2026 Awards results" description="Results are shown here after the administrator publishes each closed phase.">
+    <AppShell title="2026 Awards results" description="Track published outcomes across all three phases. Each phase stays here once released.">
       {!data && !error && <Spinner label="Loading results…" />}
       {error && <Alert tone="error" className="mb-4">{error}</Alert>}
-      {data && publishedPhases.length === 0 && (
-        <Alert tone="warning" className="mb-4">
-          No phase results have been published yet. Current phase: {phase}.
-        </Alert>
+      {data && phases.map((item) => {
+        const published = data.publications?.[item.key] ?? false;
+        return (
+          <section key={item.key} className="card mb-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">{item.title}</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${published
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-slate-100 text-slate-600'
+                }`}>
+                {published ? 'Published' : 'Awaiting publication'}
+              </span>
+            </div>
+            {published ? (
+              <ResultsTable
+                results={item.results}
+                showBreakdown={item.key === 'phase3'}
+                scoreKey={item.scoreKey}
+                scoreLabel={item.scoreLabel}
+              />
+            ) : (
+              <p className="text-sm text-slate-600">
+                Results will appear here after this phase closes and the administrator publishes them.
+              </p>
+            )}
+          </section>
+        );
+      })}
+      {data?.publications?.phase3 && (
+        <MyPoints />
       )}
-      {publishedPhases.map((item) => (
-        <section key={item.key} className="mb-6">
-          <h2 className="mb-3 text-lg font-semibold">{item.title}</h2>
-          <ResultsTable
-            results={item.results}
-            showBreakdown={item.key === 'phase3'}
-            scoreKey={item.scoreKey}
-            scoreLabel={item.scoreLabel}
-          />
-        </section>
-      ))}
-      {data?.publications?.phase3 && <MyPoints />}
     </AppShell>
   );
 }

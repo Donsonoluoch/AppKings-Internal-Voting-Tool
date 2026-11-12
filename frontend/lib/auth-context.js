@@ -30,8 +30,10 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  const login = useCallback(async (phone) => {
-    const data = await apiLogin(phone);
+  const login = useCallback(async (phone, departmentId) => {
+    const data = await apiLogin(phone, departmentId);
+    if (data.requiresDepartment) return data;
+
     const me = await get('/auth/me');
     setState({
       status: 'authenticated',
@@ -40,7 +42,7 @@ export function AuthProvider({ children }) {
       resultsPublic: me.resultsPublic,
       rules: me.rules,
     });
-    return data;
+    return { ...data, user: me.user };
   }, []);
 
   const logout = useCallback(async () => {

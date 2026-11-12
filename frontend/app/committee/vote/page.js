@@ -88,7 +88,7 @@ function CommitteeVote() {
           return (
             <section key={category.id} className="card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold">{category.name}</h2>
+                <h2 className="text-base font-bold text-slate-900">{category.name}</h2>
                 <StatusPill tone={ready ? 'green' : 'amber'}>
                   {list.length} / {maxPicks} picked
                 </StatusPill>
@@ -103,7 +103,7 @@ function CommitteeVote() {
                     return (
                       <li key={candidate.id}>
                         <label
-                          className={`flex items-center justify-between gap-3 py-2 text-sm ${candidate.hasConflict || full ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                          className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2.5 text-sm transition hover:bg-slate-50 ${candidate.hasConflict || full ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
                             }`}
                         >
                           <span className="flex items-center gap-3">

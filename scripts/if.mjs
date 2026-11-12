@@ -2,7 +2,6 @@ import { PrismaClient } from '@prisma/client';
 import { chromium } from 'playwright';
 
 const prisma = new PrismaClient();
-await prisma.employee.updateMany({ data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 } });
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });

@@ -7,21 +7,23 @@ otherwise. Phase mechanics are in `docs/context.md` §5, the go-live sequence in
 ## Before Phase 1
 
 - [ ] `.env` has a real `JWT_SECRET`; `COOKIE_SECURE=true` if it is served over HTTPS.
-- [ ] Production login identity has been verified out of band. Phone number + device
-      binding does not prove that the first person entering a number owns it; SMS/OTP is
-      not implemented yet.
-- [ ] `RUN_SEED=false` and `SEED_DEMO=false`; no demo account is present in the live DB.
-- [ ] The 60 employees are imported (`npm run db:import -- ./employees.csv --apply`).
-- [ ] `/admin/employees` shows 60 active people, the right roles and departments.
+- [ ] Admin accepts the trust-based phone-only sign-in limitation; phone ownership is not verified.
+- [ ] `RUN_SEED=false`; the roster is seeded once from the approved workbook.
+- [ ] `/admin/employees` shows the 57 expected active accounts (including Steve), with Steve as
+      Finance admin and all other initial accounts as employees.
+- [ ] The preseeded department list is available; employees select a department on first sign-in.
 - [ ] Every committee member has role `COMMITTEE`; at least two admins exist.
 - [ ] Database backup taken and the file name recorded below.
-- [ ] Tested on two real phones: device binding works, the second device is refused, one
-      reset re-registers it (context §7).
+- [ ] Tested phone-only sign-in and first-login department assignment on a disposable account.
 - [ ] `/admin` shows **Start Phase 1 — Nominations**. Use it to begin the first round.
 
-After results are published, `/admin` offers **Start a new voting session**. It clears the
-previous session's votes, nominations, cuts and result publications, but retains employee
-accounts and their device locks. Type `RESET` in the confirmation dialog.
+At any phase, `/admin` offers **Reset voting progress**. This clears nominations,
+committee picks, conflicts, votes, vote receipts, candidates/cuts and result publications,
+then returns the app to `NOT_STARTED`. Employee accounts, roles, departments and the audit
+log remain. Type `RESET` in the confirmation dialog; the action is recorded in the audit log.
+
+The reset is intentionally a single action; start Phase 1 separately after reviewing the
+reset state and confirming the roster and settings. Back up the database before resetting.
 
 **Go-live log**
 
@@ -36,12 +38,10 @@ accounts and their device locks. Type `RESET` in the confirmation dialog.
 
 Every employee nominates one colleague per category, with a justification.
 
-- Progress: `/admin` → active employees, device registration, nominations per category.
+- Progress: `/admin` → active employees, departments to confirm and nominations per category.
 - New phone or a wrong role: `/admin/employees` → edit, or re-run the CSV import.
-- Locked out of a new phone: `/admin/employees` → **Reset** on that employee. **Once per
-  employee** — the second attempt is refused by design.
 - Somebody complains they cannot vote: check `/admin/audit` filtered by `LOGIN_FAILED`
-  (unknown number, inactive account, wrong device).
+  (unknown number or inactive account).
 - The tally stays hidden while the phase is open. Do not share nomination counts.
 
 ## Closing Phase 1 → opening Phase 2
@@ -98,7 +98,7 @@ After advancing, `/admin/results` can publish Phase 2 committee-pick totals to e
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| "This number is registered to another device" | New phone or cleared browser data | Admin reset (once) |
+| Unknown phone cannot sign in | Number is not in the seeded roster or account is inactive | Check `/admin/employees` and correct the account |
 | Everyone behind the office IP gets 429 | Too many *failed* logins from that IP | Wait 15 min; check `/admin/audit` for the real cause |
 | API 500s after a deploy | Migration not applied or DB unreachable | `docker compose logs api web`; check `/api/health/ready` |
 | Phase will not move | Cut not confirmed, tie unresolved, or a category has < 2 candidates | `/admin/tally`, resolve, confirm |

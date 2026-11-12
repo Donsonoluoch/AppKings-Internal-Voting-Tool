@@ -9,7 +9,7 @@ import { get } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 function CommitteeHome() {
-  const { phase } = useAuth();
+  const { phase, user } = useAuth();
   const [categories, setCategories] = useState(null);
   const [error, setError] = useState('');
 
@@ -26,6 +26,7 @@ function CommitteeHome() {
       description="Review the top 15, read the justifications and evidence, and pick the strongest candidate per category."
       minRole="COMMITTEE"
     >
+      {user && <p className="mb-4 text-sm text-slate-600">Welcome, <strong>{user.fullName}</strong>.</p>}
       <Alert tone="error" className="mb-4">{error}</Alert>
 
       {phase === 'PHASE_2' && (

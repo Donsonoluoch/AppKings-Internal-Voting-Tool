@@ -10,14 +10,14 @@ const LINKS = [
   { href: '/employee', label: 'Home', roles: ['EMPLOYEE'] },
   { href: '/employee/nominate', label: 'Nominate', roles: ['EMPLOYEE'], phases: ['PHASE_1'] },
   { href: '/employee/vote', label: 'Vote', roles: ['EMPLOYEE'], phases: ['PHASE_3'] },
-  { href: '/employee/results', label: 'Results', roles: ['EMPLOYEE'], phases: ['PUBLISHED'] },
+  { href: '/employee/results', label: 'Published results', roles: ['EMPLOYEE', 'COMMITTEE', 'ADMIN'] },
   { href: '/committee', label: 'Committee', roles: ['COMMITTEE', 'ADMIN'], phases: ['PHASE_2'] },
   { href: '/committee/vote', label: 'Picks', roles: ['COMMITTEE', 'ADMIN'], phases: ['PHASE_2'] },
   { href: '/admin', label: 'Admin', roles: ['ADMIN'] },
   { href: '/admin/tally', label: 'Tally', roles: ['ADMIN'], phases: ['PHASE_1', 'PHASE_2'] },
   { href: '/admin/employees', label: 'Employees', roles: ['ADMIN'] },
   { href: '/admin/audit', label: 'Audit', roles: ['ADMIN'] },
-  { href: '/admin/results', label: 'Results', roles: ['ADMIN'] },
+  { href: '/admin/results', label: 'Publishing', roles: ['ADMIN'] },
 ];
 
 export default function Nav() {
@@ -40,38 +40,38 @@ export default function Nav() {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#071a3b]/95 text-white shadow-lg shadow-[#071a3b]/10 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#091b36]/95 text-white shadow-[0_8px_28px_rgba(9,27,54,0.16)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <Link href="/employee" className="flex min-w-0 items-center gap-3">
           <AppKingsBrand compact />
           <span className="hidden h-8 border-l border-white/20 sm:block" />
-          <span className="min-w-0 text-sm font-semibold leading-tight">
+          <span className="min-w-0 text-sm font-semibold leading-tight tracking-wide">
             <span className="block">2026 Awards</span>
-            <span className="block truncate text-xs font-normal text-blue-200">{user.fullName}</span>
+            <span className="mt-0.5 block truncate text-xs font-normal text-blue-200/85">{user.fullName}</span>
           </span>
         </Link>
 
-        <nav aria-label="Main navigation" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Main navigation" className="hidden items-center gap-1 lg:flex">
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${pathname === link.href
-                  ? 'bg-white/10 text-white shadow-[inset_0_-2px_0_#ff542e]'
-                  : 'text-blue-100/80 hover:bg-white/10 hover:text-white'
+              className={`rounded-xl px-3 py-2 text-[13px] font-medium transition-colors ${pathname === link.href
+                  ? 'bg-white/10 text-white shadow-[inset_0_-2px_0_#f45b3c]'
+                  : 'text-blue-100/75 hover:bg-white/[0.08] hover:text-white'
                 }`}
             >
               {link.label}
             </Link>
           ))}
-          <button type="button" onClick={onLogout} className="ml-2 rounded-lg border border-white/20 px-3 py-2 text-sm font-medium text-blue-100 transition hover:border-white/40 hover:bg-white/10 hover:text-white">
+          <button type="button" onClick={onLogout} className="ml-2 rounded-xl border border-white/15 px-3 py-2 text-[13px] font-medium text-blue-100 transition hover:border-white/35 hover:bg-white/10 hover:text-white">
             Sign out
           </button>
         </nav>
 
         <button
           type="button"
-          className="rounded-lg border border-white/25 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 md:hidden"
+          className="rounded-xl border border-white/25 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 lg:hidden"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
@@ -81,14 +81,14 @@ export default function Nav() {
       </div>
 
       {open && (
-        <div className="border-t border-white/10 bg-[#0a2149] px-4 py-2 md:hidden">
-          <div className="mx-auto flex max-w-5xl flex-col">
+        <div className="border-t border-white/10 bg-[#0a2149] px-4 py-2 lg:hidden">
+          <div className="mx-auto flex max-w-6xl flex-col">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className={`rounded-lg px-3 py-2.5 text-sm font-medium transition ${pathname === link.href ? 'bg-white/10 text-white' : 'text-blue-100 hover:bg-white/10'}`}
+                className={`rounded-xl px-3 py-2.5 text-sm font-medium transition ${pathname === link.href ? 'bg-white/10 text-white' : 'text-blue-100 hover:bg-white/10'}`}
               >
                 {link.label}
               </Link>

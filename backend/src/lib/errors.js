@@ -14,12 +14,6 @@ const errors = {
     new ApiError(401, ERRORS.UNAUTHENTICATED, message),
   forbidden: (message = 'You do not have access to this.') =>
     new ApiError(403, ERRORS.FORBIDDEN, message),
-  deviceMismatch: () =>
-    new ApiError(
-      403,
-      ERRORS.DEVICE_MISMATCH,
-      'This number is registered to another device. Contact an administrator.'
-    ),
   inactive: () => new ApiError(403, ERRORS.ACCOUNT_INACTIVE, 'This account is not active.'),
   phaseClosed: (message = 'This action is not available in the current phase.') =>
     new ApiError(409, ERRORS.PHASE_CLOSED, message),

@@ -36,7 +36,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd backend && npx prisma generate
 RUN cd frontend && npx next build
 
-# ---------- api image (backend only) ----------
+# ---------- api image: Express + embedded PostgreSQL ----------
+# This is the second and last image. It runs the API and PostgreSQL together, so the
+# production deployment needs exactly two containers: `web` and `api`.
 FROM node:22-alpine AS backend
 WORKDIR /app
 RUN apk add --no-cache openssl tini postgresql16 postgresql16-client su-exec
@@ -51,7 +53,7 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/packages/shared ./packages/shared
 COPY --from=build /app/backend ./backend
 COPY backend/docker-entrypoint.sh /usr/local/bin/api-entrypoint.sh
-RUN chmod +x /usr/local/bin/api-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/api-entrypoint.sh && chmod +x /usr/local/bin/api-entrypoint.sh
 
 WORKDIR /app/backend
 EXPOSE 4000
@@ -99,16 +101,15 @@ COPY --from=build /app/frontend/public ./web/frontend/public
 
 COPY infra/supervisord.conf /etc/supervisor/conf.d/appkings.conf
 COPY backend/docker-entrypoint.sh /usr/local/bin/app-entrypoint.sh
-RUN chmod +x /usr/local/bin/app-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/app-entrypoint.sh && chmod +x /usr/local/bin/app-entrypoint.sh
 
 # Migrations and seeding run from the backend workspace (schema.prisma, prisma/seed.js).
 WORKDIR /app/backend
 
 # The API target above already publishes the API port; this target is the web-facing one.
-# Without this line the tag-level EXPOSE 4000 leaks in and Docker publishes it in modes
-# that should not expose the API (e.g. a web container with `network_mode: host`).
-EXPOSE 3000
-
+# Declaring it again here keeps the tag-level EXPOSE 4000 from leaking in, so Docker never
+# publishes the API port in modes that should not expose it (e.g. `network_mode: host`).
+#
 # Web is the public port; the API listens on 127.0.0.1:4000 (APP_ROLE=all) or another
 # container (APP_ROLE=web) and is reached through the proxy. Use `wget --spider`: it waits
 # for already-received headers, so an unreachable API fails the check fast instead of

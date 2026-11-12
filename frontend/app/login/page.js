@@ -14,6 +14,9 @@ function LoginForm() {
   const next = params.get('next');
 
   const [phone, setPhone] = useState('');
+  const [departments, setDepartments] = useState([]);
+  const [departmentId, setDepartmentId] = useState('');
+  const [needsDepartment, setNeedsDepartment] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -28,7 +31,12 @@ function LoginForm() {
     setError('');
     setBusy(true);
     try {
-      const result = await login(`+254${phone.replace(/\D/g, '')}`);
+      const result = await login(phone.trim(), departmentId || undefined);
+      if (result.requiresDepartment) {
+        setDepartments(result.departments);
+        setNeedsDepartment(true);
+        return;
+      }
       router.replace(next && next.startsWith('/') ? next : roleHome(result.user.role));
     } catch (loginError) {
       setError(loginError.message);
@@ -38,60 +46,94 @@ function LoginForm() {
   };
 
   return (
-    <main className="login-backdrop relative grid min-h-screen place-items-center overflow-hidden px-4 py-10">
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[min(90vw,34rem)] w-[min(90vw,34rem)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-300/20 after:absolute after:inset-2 after:rounded-full after:border after:border-white/10" />
-      <div className="relative w-full max-w-md">
-        <section className="rounded-[1.75rem] border border-white/50 bg-white p-6 shadow-2xl shadow-black/30 sm:p-9">
-          <div className="mb-6">
+    <main className="login-backdrop relative grid min-h-screen place-items-center overflow-hidden px-4 py-8 sm:py-12">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[min(90vw,36rem)] w-[min(90vw,36rem)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-300/20 after:absolute after:inset-3 after:rounded-full after:border after:border-white/10" />
+      <div className="relative w-full max-w-[28rem]">
+        <section className="rounded-[2rem] border border-white/70 bg-white p-6 shadow-[0_30px_90px_rgba(0,0,0,0.3)] sm:p-9">
+          <div className="mb-7">
             <AppKingsBrand />
             <div className="mt-6 border-t border-slate-100 pt-5 text-center">
-              <h1 className="text-xl font-bold leading-snug text-brand-900">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent-600">AppKings Solutions</p>
+              <h1 className="mt-2 text-2xl font-bold leading-snug tracking-tight text-brand-900">
                 2026 Employee Awards
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-500">
                 Employee Recognition and Voting Portal
               </p>
             </div>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
+          <form onSubmit={onSubmit} className="space-y-5">
           <div>
             <label className="label" htmlFor="phone">
               Phone number
             </label>
-            <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white transition focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200">
-              <span className="grid place-items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">
-                +254
-              </span>
-              <input
-                id="phone"
-                inputMode="numeric"
-                autoComplete="tel-national"
-                placeholder="712 345 678"
-                className="w-full border-0 px-3 py-2.5 text-base focus:outline-none focus:ring-0"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                required
-              />
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Use the number your administrator registered. Use one browser — do not use incognito mode.
+            <input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+254 712 345 678"
+              className="input"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              required
+              disabled={needsDepartment}
+            />
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Enter the phone number registered by your administrator.
             </p>
           </div>
 
+          {needsDepartment && (
+            <div>
+              <label className="label" htmlFor="department">
+                Choose your department
+              </label>
+              <select
+                id="department"
+                className="input"
+                value={departmentId}
+                onChange={(event) => setDepartmentId(event.target.value)}
+                required
+              >
+                <option value="">Select a department…</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                This is saved to your employee profile. Contact Steve if it needs changing later.
+              </p>
+              <button
+                type="button"
+                className="mt-2 text-sm font-medium text-brand-700 hover:text-brand-900"
+                onClick={() => {
+                  setNeedsDepartment(false);
+                  setDepartments([]);
+                  setDepartmentId('');
+                }}
+              >
+                Use a different phone number
+              </button>
+            </div>
+          )}
+
           <Alert tone="error">{error}</Alert>
 
-          <button type="submit" className="btn-primary w-full" disabled={busy}>
-            {busy ? 'Checking…' : 'Continue'}
+          <button type="submit" className="btn-primary w-full" disabled={busy || (needsDepartment && !departmentId)}>
+            {busy ? 'Signing in…' : needsDepartment ? 'Save department and sign in' : 'Continue'}
           </button>
           </form>
 
-          <p className="mt-4 text-center text-xs leading-relaxed text-slate-500">
-            Your first sign-in registers this device. A second device is blocked for security.
+          <p className="mt-5 text-center text-xs leading-relaxed text-slate-500">
+            Sign in with your registered phone number. Your name and department appear after sign-in.
           </p>
         </section>
-        <p className="mt-5 text-center text-xs tracking-wide text-blue-100/70">
-          A better way to celebrate the people behind our success
+        <p className="mt-6 text-center text-xs tracking-wide text-blue-100/75">
+          Celebrating the people behind our success
         </p>
       </div>
     </main>

@@ -8,21 +8,27 @@
 // preview agrees with what the transition endpoint then does — a preview that
 // lies is worse than no preview.
 //
-// Five employees take part, each a distinct account, so the one-vote-per-account
+// Five roster employees take part, each a distinct account, so the one-vote-per-account
 // rule is exercised on every ballot.
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 
 const BASE = process.env.APPKINGS_URL ?? 'http://localhost:3000';
-const prisma = new PrismaClient();
+const appHost = new URL(BASE).hostname;
+if (!['localhost', '127.0.0.1'].includes(appHost)) {
+  throw new Error('The cycle test only runs against a local application URL.');
+}
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+if (!TEST_DATABASE_URL) throw new Error('Set TEST_DATABASE_URL to a disposable local test database.');
+const testDatabase = new URL(TEST_DATABASE_URL);
+const testDatabaseName = decodeURIComponent(testDatabase.pathname.slice(1));
+if (!['localhost', '127.0.0.1'].includes(testDatabase.hostname) ||
+  (!/(?:^|[_-])(test|dev)(?:[_-]|$)/i.test(testDatabaseName) && testDatabase.port !== '5434')) {
+  throw new Error('Use a local test/dev database, or the dedicated development port 5434.');
+}
+const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
 
-const PEOPLE = [
-  { phone: '+254700000001', role: 'ADMIN' },
-  { phone: '+254700000002', role: 'COMMITTEE' },
-  { phone: '+254700000003', role: 'COMMITTEE' },
-  { phone: '+254700000004', role: 'EMPLOYEE' },
-  { phone: '+254700000005', role: 'EMPLOYEE' },
-];
+let PEOPLE = [];
 
 let passed = 0;
 let failed = 0;
@@ -44,15 +50,24 @@ function heading(text) {
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
 async function login(phone) {
-  const res = await fetch(`${BASE}/api/auth/login`, {
+  const signIn = async (departmentId) => fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone: phone.replace(/^\+254/, '') }),
+    body: JSON.stringify({ phone: phone.replace(/^\+254/, ''), ...(departmentId ? { departmentId } : {}) }),
   });
+  let res = await signIn();
+  let body = await res.json().catch(() => ({}));
+  let departmentAssigned = false;
+  if (body.requiresDepartment) {
+    const departmentId = body.departments?.[0]?.id;
+    if (!departmentId) throw new Error(`login ${phone}: no departments available for onboarding`);
+    res = await signIn(departmentId);
+    body = await res.json().catch(() => ({}));
+    departmentAssigned = true;
+  }
   const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
-  const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`login ${phone}: ${res.status} ${JSON.stringify(body)}`);
-  return { cookie, user: body.employee ?? body.user ?? body };
+  return { cookie, user: body.user, departmentAssigned };
 }
 
 function client(cookie) {
@@ -73,11 +88,28 @@ async function main() {
   console.log(`\n\x1b[1mAppKings — full cycle, Phase 1 to winner\x1b[0m`);
   console.log(`  ${BASE}\n`);
 
-  // This runner is only for a disposable database. Clear test device bindings
-  // before sign-in; production cycle resets intentionally preserve device locks.
-  await prisma.employee.updateMany({
-    data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 },
+  const adminPhone = process.env.BOOTSTRAP_ADMIN_PHONE || '+254706831847';
+  const adminEmployee = await prisma.employee.findUnique({ where: { phone: adminPhone } });
+  if (!adminEmployee || adminEmployee.role !== 'ADMIN') {
+    throw new Error('The test database needs the seeded bootstrap admin account.');
+  }
+  const otherEmployees = await prisma.employee.findMany({
+    where: { active: true, id: { not: adminEmployee.id } },
+    orderBy: { phone: 'asc' },
+    take: 4,
   });
+  if (otherEmployees.length !== 4) throw new Error('The test database needs at least four additional active roster employees.');
+  const testRoles = ['COMMITTEE', 'COMMITTEE', 'EMPLOYEE', 'EMPLOYEE'];
+  for (const [index, employee] of otherEmployees.entries()) {
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: { role: testRoles[index], departmentId: null },
+    });
+  }
+  PEOPLE = [
+    { phone: adminEmployee.phone, role: 'ADMIN' },
+    ...otherEmployees.map((employee, index) => ({ phone: employee.phone, role: testRoles[index] })),
+  ];
 
   const adminLogin = await login(PEOPLE[0].phone);
   const api = client(adminLogin.cookie);
@@ -86,21 +118,24 @@ async function main() {
   heading('0. Reset the cycle');
   const reset = await api('POST', '/api/admin/reset-cycle', { confirm: 'RESET' });
   check('the cycle resets to NOT_STARTED', reset.ok && reset.data.phase === 'NOT_STARTED', JSON.stringify(reset.data));
-  const boundAfterReset = await prisma.employee.count({ where: { deviceHash: { not: null } } });
-  check('a new session preserves device locks',
-    boundAfterReset === 1 && reset.data.devicesRetained === boundAfterReset,
-    `${boundAfterReset} device(s) remain registered`);
-
-  // Reuse the pre-reset admin session and sign the other four test accounts in
-  // once. Resetting a cycle preserves device locks, so a second login would fail.
+  // Sign in the other test accounts. The first employee login also exercises
+  // department onboarding; repeat login is allowed from a separate session.
   const sessions = new Map();
+  let testedDepartmentOnboarding = false;
   for (const person of PEOPLE) {
     const session = person.phone === PEOPLE[0].phone
       ? adminLogin
       : await login(person.phone);
+    if (session.departmentAssigned && !session.user?.department) {
+      throw new Error(`department onboarding did not return the saved department for ${person.phone}`);
+    }
+    testedDepartmentOnboarding ||= session.departmentAssigned;
     sessions.set(person.phone, client(session.cookie));
   }
   check('all five employees are signed in', sessions.size === PEOPLE.length, `${sessions.size}`);
+  check('first sign-in department onboarding is available for roster employees', testedDepartmentOnboarding);
+  const repeatLogin = await login(PEOPLE[4].phone);
+  check('the same phone can sign in from another browser session', Boolean(repeatLogin.cookie));
 
   // ── Phase 1 ───────────────────────────────────────────────────────────────
   heading('1. Phase 1 — nominations');
@@ -116,6 +151,15 @@ async function main() {
     orderBy: { phone: 'asc' },
     select: { id: true, fullName: true, phone: true },
   });
+  const bootstrapAdmin = await prisma.employee.findUnique({
+    where: { phone: adminPhone },
+    include: { department: { select: { name: true } } },
+  });
+  check('bootstrap admin is Steve Martin in Finance',
+    bootstrapAdmin?.fullName === (process.env.BOOTSTRAP_ADMIN_NAME || 'Steve Martin') &&
+      bootstrapAdmin.role === 'ADMIN' &&
+      bootstrapAdmin.department?.name === 'Finance',
+    bootstrapAdmin ? `${bootstrapAdmin.fullName}, ${bootstrapAdmin.role}, ${bootstrapAdmin.department?.name}` : 'not found');
   const byCategory = new Map();
   for (const candidate of candidates) {
     const list = byCategory.get(candidate.categoryId) ?? [];
@@ -130,10 +174,8 @@ async function main() {
   const departments = await prisma.department.findMany({ orderBy: { name: 'asc' } });
   const ME = 'A consistent, visible contribution throughout the year.';
 
-  // The Phase 1 cut needs 15 people in the POOLED ranking, and the pool is built
-  // from people who made a top-5 in some category. Five nominators cannot
-  // produce that, so every eligible employee nominates — which is also what a
-  // real cycle looks like. The five demo accounts are the ones we then vote as.
+  // The Phase 1 cut needs 15 people in the POOLED ranking, so every eligible
+  // roster employee nominates. The five test accounts then exercise the ballots.
   const nominators = [];
   for (const employee of employees) {
     const phone = employee.phone;
@@ -143,8 +185,8 @@ async function main() {
     }
     try {
       nominators.push({ phone, employeeId: employee.id, voter: client((await login(phone)).cookie) });
-    } catch {
-      // A phone that cannot sign in is simply not a nominator.
+    } catch (error) {
+      console.warn(`  Could not sign in roster employee ${phone}: ${error.message}`);
     }
   }
   console.log(`  ${nominators.length} nominators`);
@@ -375,6 +417,8 @@ async function main() {
       publicResults.publications?.phase3 === true &&
       publicResults.phaseResults?.phase1?.length > 0 &&
       publicResults.phaseResults?.phase2?.length > 0 &&
+      publicResults.phaseResults?.phase1?.some((category) => category.results.length > 0) &&
+      publicResults.phaseResults?.phase2?.some((category) => category.results.length > 0) &&
       categoriesOut.length > 0,
     `status=${resultsRes.status} published=${publicResults.published} categories=${categoriesOut.length}`);
 
@@ -443,6 +487,53 @@ async function main() {
 
   const audit = await api('GET', '/api/admin/audit');
   check('every step is in the audit log', (audit.data.entries ?? audit.data.items ?? []).length > 0);
+
+  // ── Reset from an in-progress phase ──────────────────────────────────────
+  heading('7. Admin-only reset from Phase 2');
+  await prisma.settings.update({ where: { id: 1 }, data: { phase: 'PHASE_2' } });
+  const employeeReset = await sessions.get(PEOPLE[3].phone)('POST', '/api/admin/reset-cycle', { confirm: 'RESET' });
+  check('employees cannot reset election progress', employeeReset.status === 403, `${employeeReset.status}`);
+  const committeeReset = await sessions.get(PEOPLE[1].phone)('POST', '/api/admin/reset-cycle', { confirm: 'RESET' });
+  check('committee members cannot reset election progress', committeeReset.status === 403, `${committeeReset.status}`);
+  const missingResetConfirmation = await api('POST', '/api/admin/reset-cycle', { confirm: 'reset' });
+  check('reset requires the explicit RESET confirmation', missingResetConfirmation.status === 400,
+    `${missingResetConfirmation.status}`);
+  const legacyRestart = await api('POST', '/api/admin/reset-cycle', { confirm: 'START_OVER' });
+  check('cycle reset no longer accepts a second start-over action', legacyRestart.status === 400,
+    `${legacyRestart.status}`);
+
+  const conflictCandidate = await prisma.candidate.findFirst({ where: { inPhase3: true } });
+  const committeeMember = await prisma.employee.findFirst({ where: { role: 'COMMITTEE' } });
+  if (conflictCandidate && committeeMember) {
+    await prisma.conflict.create({
+      data: { candidateId: conflictCandidate.id, memberId: committeeMember.id },
+    });
+  }
+  const resetFromPhase2 = await api('POST', '/api/admin/reset-cycle', { confirm: 'RESET' });
+  check('admins can reset directly from Phase 2',
+    resetFromPhase2.ok && resetFromPhase2.data.phase === 'NOT_STARTED', JSON.stringify(resetFromPhase2.data));
+
+  const [remainingNominations, remainingCandidates, remainingCommitteeVotes, remainingVotes,
+    remainingReceipts, remainingConflicts, retainedEmployees, resetAudit] = await Promise.all([
+    prisma.nomination.count(),
+    prisma.candidate.count(),
+    prisma.committeeVote.count(),
+    prisma.vote.count(),
+    prisma.voteReceipt.count(),
+    prisma.conflict.count(),
+    prisma.employee.count(),
+    prisma.auditLog.findFirst({ where: { action: 'CYCLE_RESET' } }),
+  ]);
+  check('reset clears all election data but preserves employee accounts',
+    remainingNominations === 0 &&
+      remainingCandidates === 0 &&
+      remainingCommitteeVotes === 0 &&
+      remainingVotes === 0 &&
+      remainingReceipts === 0 &&
+      remainingConflicts === 0 &&
+      retainedEmployees === employees.length,
+    `nominations=${remainingNominations}, candidates=${remainingCandidates}, employees=${retainedEmployees}`);
+  check('admin reset is recorded in the audit log', Boolean(resetAudit));
 
   // ── Report ────────────────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(60)}`);
