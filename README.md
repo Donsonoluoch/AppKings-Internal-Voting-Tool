@@ -19,7 +19,7 @@ Scoring is **points only**: each voter makes one pick per category, each pick is
 | Frontend | Next.js (JavaScript, App Router) + Tailwind CSS         |
 | Backend  | Express.js (JavaScript)                                 |
 | ORM / DB | Prisma + PostgreSQL                                     |
-| Auth     | Phone number + device binding, JWT in an httpOnly cookie |
+| Auth     | Phone number, JWT in an httpOnly cookie; department chosen on first sign-in |
 
 Three workspaces (`backend`, `frontend`, `packages/shared`). Production Docker runs
 exactly two containers: a frontend, and a backend container that runs both Express and
@@ -28,15 +28,16 @@ PostgreSQL. The database is stored in the persistent `appkings-voting_db_data` v
 ## Quick start (local, no Docker)
 
 Requires a local PostgreSQL database. For native development, change the sample
-`host.docker.internal` database host to `localhost`. Set `DATABASE_URL`, `JWT_SECRET`, and
-`SEED_DEMO=true` in `.env` for a disposable local demo.
+`host.docker.internal` database host to `localhost`. Set `DATABASE_URL` and `JWT_SECRET`
+in `.env`. Seeding reads only names and phone numbers from `AppKings Team Data.xlsx` (or
+the path configured with `EMPLOYEE_ROSTER_FILE`).
 
 ```bash
-cp .env.example .env           # set DATABASE_URL, JWT_SECRET and SEED_DEMO=true
+cp .env.example .env           # set DATABASE_URL, JWT_SECRET and BOOTSTRAP_ADMIN_PHONE
 npm install
 npm run prisma:generate
 npm run prisma:migrate         # create/apply migrations
-npm run db:seed                # categories + demo people
+npm run db:seed                # categories + real roster + Steve Martin admin
 npm run dev                    # API on :4000, web on :3000
 ```
 
@@ -49,15 +50,15 @@ npm run docker:logs
 npm run docker:down
 ```
 
-Production Docker defaults do not seed demo users. Set `BOOTSTRAP_ADMIN_PHONE` in `.env`,
-start the stack, then run the one-time seed command from [docs/deploy.md](docs/deploy.md).
+Production Docker defaults do not seed automatically. Set `BOOTSTRAP_ADMIN_PHONE` in
+`.env`, start the stack, then run the one-time workbook seed from [docs/deploy.md](docs/deploy.md).
 The database volume survives container rebuilds and `docker compose down`; do not use
 `docker compose down -v` unless you intend to delete all voting data.
 
-**Authentication limitation:** sign-in currently accepts a registered phone number without
-verifying control of it. Device binding blocks later browsers, but does not authenticate
-the first person to claim an account. Do not use this as production identity verification
-until an approved SMS/OTP or equivalent flow is implemented.
+**Authentication limitation:** sign-in accepts a registered phone number without verifying
+control of it. There is no device lock or SMS/OTP challenge, so this is a trust-based internal
+login and does not prove identity. Use an approved identity-verification flow if that risk is
+not acceptable.
 
 ## Commands
 
@@ -80,7 +81,7 @@ until an approved SMS/OTP or equivalent flow is implemented.
 | `npm run prisma:generate` | Generate the Prisma client |
 | `npm run prisma:migrate` | Create/apply a migration locally |
 | `npm run db:deploy` | Apply migrations (deploy) |
-| `npm run db:seed` | Categories, departments, demo people (idempotent) |
+| `npm run db:seed` | Categories, departments, roster names/phones, Steve Martin admin (idempotent) |
 | `npm run db:import -- <file.csv> [--apply]` | Phase 3 employee import; dry run unless `--apply` |
 | `npm run db:reset` | Drop, migrate and re-seed |
 | `npm run db:status` | Migration status |
@@ -89,11 +90,10 @@ until an approved SMS/OTP or equivalent flow is implemented.
 
 | Command | What it does |
 |---------|--------------|
-| `npm run docker:build` | Build both app images |
+| `npm run docker:build` | Build the two images (`web`, `api`) |
 | `npm run docker:up` / `docker:down` | Frontend + backend containers on `WEB_PORT` |
+| `npm run docker:rebuild` | Rebuild and force-recreate both containers |
 | `npm run docker:logs` / `docker:ps` / `docker:shell` | Inspect the running stack |
-| `npm run docker:api` / `npm run docker:web` | Build and start an individual app service |
-| `npm run docker:build:api` | API-only image (`--target backend`) |
 
 `stack:up`, `stack:down`, `stack:logs`, `stack:ps` are aliases of the
 `docker:*` commands.
@@ -110,34 +110,27 @@ until an approved SMS/OTP or equivalent flow is implemented.
 
 | Command | What it does |
 |---------|--------------|
-| `npm run smoke` | End-to-end phase flow against a running stack (changes the phase) |
+| `npm run smoke` | End-to-end phase flow against a local test stack (changes election data) |
 
-## Demo logins
+## Initial accounts
 
-Phone only — the device binds on first sign-in.
-
-| Phone | Person | Role |
-|-------|--------|------|
-| `+254700000001` | Grace Wanjiru | ADMIN |
-| `+254700000002` | Peter Otieno | COMMITTEE |
-| `+254700000003` | Mary Achieng | COMMITTEE |
-| `+254700000004` … `+254700000025` | demo staff | EMPLOYEE |
-
-Demo people are for local testing only; set `SEED_DEMO=true` explicitly to create them.
+The seed reads only `FIRSTNAME`, `LASTNAME` and `PHONE` from the workbook, skips later
+duplicate phone rows, and creates the first admin as Steve Martin in Finance using
+`BOOTSTRAP_ADMIN_PHONE` (default `+254706831847`). Other roster accounts start as employees;
+Steve can assign committee and additional admin roles in the admin console. Employees choose
+their department at first sign-in. The workbook is not copied into Docker images.
 
 ## Voting flow tests
 
 ```bash
-npm run test:five-browsers     # five isolated browser contexts; exercises roles/device lock
+npm run test:five-browsers     # five isolated browser contexts; exercises multi-browser sign-in
 npm run test:cycle             # drives the API from Phase 1 through published results
 ```
 
-Both tests use the configured database and the cycle test changes its data. Run them only
-against a disposable test stack, never a live election database.
-To repeat the browser device test from a clean device state, run
-`node scripts/five-browser-test.mjs --reset` with `TEST_DATABASE_URL` set to a local
-disposable database whose name contains `test` or `dev`. The reset clears only the five
-demo device bindings.
+All browser, cycle and smoke tests require `TEST_DATABASE_URL` to point to a local
+disposable database whose name contains `test` or `dev`, or to the development stack on
+port `5434`. The cycle and smoke tests modify election data; never point them at a live
+election database.
 
 ## How the phases work
 

@@ -4,7 +4,6 @@ import { chromium } from 'playwright';
 const prisma = new PrismaClient();
 const WEB = 'http://localhost:3300';
 
-await prisma.employee.updateMany({ data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 } });
 const before = await prisma.nomination.count();
 console.log(`nominations before: ${before}`);
 

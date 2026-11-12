@@ -45,9 +45,6 @@ model Employee {
   active             Boolean     @default(true) // allowed to log in
   departmentId       String?
   department         Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  deviceHash         String? // SHA-256 of the device token, never the raw token
-  deviceRegisteredAt DateTime?
-  deviceResetCount   Int         @default(0)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
@@ -192,7 +189,7 @@ model Settings {
 model AuditLog {
   id        String   @id @default(cuid())
   actorId   String?
-  action    String // LOGIN, LOGIN_FAILED, DEVICE_RESET, PHASE_CHANGE, NOMINATE, VOTE_CAST...
+  action    String // LOGIN, LOGIN_FAILED, DEPARTMENT_ASSIGNED, PHASE_CHANGE, NOMINATE, VOTE_CAST...
   details   Json?
   ip        String?
   createdAt DateTime @default(now())

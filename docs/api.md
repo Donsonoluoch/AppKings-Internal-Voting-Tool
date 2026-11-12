@@ -13,14 +13,13 @@ Error shape, always:
 |------|--------|------|
 | `UNAUTHENTICATED` | 401 | No or expired session |
 | `FORBIDDEN` | 403 | Role not allowed |
-| `DEVICE_MISMATCH` | 403 | Number registered to another device |
 | `ACCOUNT_INACTIVE` | 403 | Employee switched off |
 | `VALIDATION_ERROR` | 400 | zod rejected the body |
 | `NOT_FOUND` | 404 | Unknown id |
 | `PHASE_CLOSED` | 409 | Action not allowed in the current phase |
 | `TIE_UNRESOLVED` | 409 | A tie sits on a cut line |
 | `CUT_NOT_CONFIRMED` | 409 | The cut was not confirmed before moving on |
-| `CONFLICT` | 409 | Duplicate vote, second device reset, … |
+| `CONFLICT` | 409 | Duplicate vote or other state conflict |
 | `RATE_LIMITED` | 429 | Too many failed logins |
 
 ---
@@ -36,12 +35,14 @@ Error shape, always:
 
 ### `POST /auth/login`
 ```json
-{ "phone": "0712345678", "deviceToken": "…optional…" }
+{ "phone": "0712345678", "departmentId": "…optional…" }
 ```
-`200` → `{ user: { id, fullName, phone, role, department, hasDevice }, deviceToken?: string, phase }`.
-`deviceToken` is returned **once**, when the device is first registered. `403 DEVICE_MISMATCH`
-when the number already has a device and the token is missing or wrong. Rate limited to
-`LOGIN_RATE_LIMIT` (default 10) **failed** attempts per 15 minutes per IP.
+For an employee without a department, the first request returns
+`{ requiresDepartment: true, departments: [{ id, name }] }` without creating a session.
+Submit again with the selected `departmentId` to save it and sign in.
+`200` → `{ user: { id, fullName, phone, role, department }, phase }`. Subsequent sign-ins
+require only the phone number. Rate limited to `LOGIN_RATE_LIMIT` (default 10) failed
+attempts per 15 minutes per IP. Phone-only login does not verify control of the phone number.
 
 ### `POST /auth/logout` → `{ ok: true }` (clears the cookie)
 ### `GET /auth/me` → `{ user, phase, phaseMeta, resultsPublic, rules }`
@@ -88,10 +89,12 @@ vote row carries no voter id; a `VoteReceipt` records that this employee has vot
 ### `GET /results` — results released to employees
 → `{ published, publications: { phase1, phase2, phase3 }, phaseResults: { phase1, phase2 }, results, overall }`
 
-Only phase results the admin has published are returned to employees. Phase 1 can be
-released after moving to Phase 2, Phase 2 after moving to Phase 3, and Phase 3 after
-closing the final vote. `published` indicates whether the final phase is public;
-`results` and `overall` are empty until then. Admins may call it at any time.
+The publication flags and three phase slots are available to every signed-in user so the
+shared results page can show publication status for the full election. Scores are returned
+only for phases the admin has published. Phase 1 can be released after moving to Phase 2,
+Phase 2 after moving to Phase 3, and Phase 3 after closing the final vote. `published`
+indicates whether the final phase is public; `results` and `overall` are empty until then.
+Admins may also preview unpublished results.
 
 ### `GET /results/me` — final results published only
 → `{ published, categories: [{ categoryId, categoryName, nominationPoints, committeePoints, finalPoints, totalPoints, inPhase2, inPhase3 }], totals }`
@@ -135,15 +138,16 @@ in that category. `403 FORBIDDEN` on a conflict.
 - `GET /admin/employees?search=` → `{ employees: [...] }` (includes phone — admin only)
 - `POST /admin/employees/import` `{ csv, dryRun? }` → `{ created, updated, skipped: [{ line, reason }], departmentsCreated }`
 - `PATCH /admin/employees/:id` `{ fullName?, role?, eligible?, active?, departmentId? }`
-- `POST /admin/devices/:id/reset` → `{ ok: true }`; `409` on the second reset
 - `GET /admin/departments` / `POST /admin/departments` `{ name }`
 
 ### Phases and cuts
 - `POST /admin/phase` `{ phase, confirm: true }` → `{ phase, phaseMeta }`. Forward only.
   Gate checks: `409 CUT_NOT_CONFIRMED` / `409 TIE_UNRESOLVED` / `409 CONFLICT`.
-- `POST /admin/reset-cycle` `{ confirm: "RESET" }` → `{ ok, phase: "NOT_STARTED", devicesRetained }`.
-  Clears a completed session's voting data and publications while preserving employee
-  accounts and device locks.
+- `POST /admin/reset-cycle` `{ confirm: "RESET" }` → `{ ok, phase: "NOT_STARTED", deleted }`.
+  Available from any phase to admins only. This clears nominations, candidates,
+  committee picks, conflicts, votes, vote receipts and publications while preserving employee
+  accounts, roles, departments and the audit log. The action returns the cycle to
+  `NOT_STARTED` and is recorded as `CYCLE_RESET`.
 - `GET /admin/tally` → `{ phase, tally, problems }`
   - `tally.categories[]`: `{ categoryId, categoryName, forTeams, rows, finalists, tiedAtCutoff, shortOfMinimum }`
   - `tally.people[]`: pooled ranking with `rank`, `points`, `advances`
@@ -161,7 +165,7 @@ in that category. `403 FORBIDDEN` on a conflict.
   publishing requires CLOSED and moves the cycle to PUBLISHED.
 
 ### Audit actions
-`LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `DEVICE_RESET`, `PHASE_CHANGE`, `NOMINATE`,
+`LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `DEPARTMENT_ASSIGNED`, `PHASE_CHANGE`, `NOMINATE`,
 `COMMITTEE_PICK`, `CONFLICT_DECLARED`, `CUT_CONFIRMED`, `CANDIDATE_REMOVED`, `VOTE_CAST`
 (category only), `RESULTS_PUBLISHED`, `EMPLOYEE_IMPORTED`, `EMPLOYEE_UPDATED`,
-`DEPARTMENT_CREATED`.
+`DEPARTMENT_CREATED`, `CYCLE_RESET`.

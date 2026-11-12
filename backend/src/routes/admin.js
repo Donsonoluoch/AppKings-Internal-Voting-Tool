@@ -95,7 +95,7 @@ async function buildReadiness(phase, categories) {
 router.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
-    const [employees, categories, candidateGroups, phase2Groups, phase3Groups, receipts, pendingDevices] =
+    const [employees, categories, candidateGroups, phase2Groups, phase3Groups, receipts, employeesMissingDepartment] =
       await Promise.all([
         prisma.employee.count({ where: { active: true } }),
         prisma.category.findMany({ orderBy: { sortOrder: 'asc' } }),
@@ -103,7 +103,7 @@ router.get(
         prisma.candidate.groupBy({ by: ['categoryId'], where: { inPhase2: true }, _count: { _all: true } }),
         prisma.candidate.groupBy({ by: ['categoryId'], where: { inPhase3: true }, _count: { _all: true } }),
         prisma.voteReceipt.groupBy({ by: ['categoryId'], _count: { _all: true } }),
-        prisma.employee.count({ where: { deviceRegisteredAt: null, active: true } }),
+        prisma.employee.count({ where: { departmentId: null, active: true } }),
       ]);
 
     const candidateCounts = new Map(candidateGroups.map((g) => [g.categoryId, g._count._all]));
@@ -117,7 +117,7 @@ router.get(
       phaseMeta: PHASE_META[req.phase],
       resultsPublic: req.settings?.resultsPublic ?? false,
       activeEmployees: employees,
-      pendingDevices,
+      employeesMissingDepartment,
       rules: config.rules,
       categories: categories.map((category) => ({
         id: category.id,
@@ -151,9 +151,6 @@ function presentEmployee(employee) {
     active: employee.active,
     department: employee.department?.name ?? null,
     departmentId: employee.departmentId,
-    deviceRegisteredAt: employee.deviceRegisteredAt,
-    hasDevice: Boolean(employee.deviceHash),
-    deviceResetCount: employee.deviceResetCount,
   };
 }
 
@@ -310,35 +307,6 @@ router.patch(
     });
 
     res.json({ employee: presentEmployee(updated) });
-  })
-);
-
-// POST /api/admin/devices/:id/reset — once per employee (§7 rule 6)
-router.post(
-  '/devices/:id/reset',
-  asyncHandler(async (req, res) => {
-    const employee = await prisma.employee.findUnique({ where: { id: req.params.id } });
-    if (!employee) throw errors.notFound('Employee not found.');
-
-    if (employee.deviceResetCount >= 1) {
-      throw errors.conflict(
-        'This employee has already had their device reset once. Escalate to a second admin for a manual fix.'
-      );
-    }
-
-    await prisma.employee.update({
-      where: { id: employee.id },
-      data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: { increment: 1 } },
-    });
-
-    await audit({
-      actorId: req.user.id,
-      action: ACTIONS.DEVICE_RESET,
-      details: { employeeId: employee.id, employeeName: employee.fullName },
-      ip: clientIp(req),
-    });
-
-    res.json({ ok: true });
   })
 );
 
@@ -619,62 +587,46 @@ router.get(
   })
 );
 
-// POST /api/admin/reset-cycle â€” start the cycle over, for testing and for a
-// genuine re-run.
-//
-// A competition is strictly forward: PUBLISHED is terminal and nothing can
-// move it back. That is right for production, but it means a finished cycle
-// can never be rehearsed again without wiping the database by hand. This
-// endpoint clears the votes, nominations and confirmed cuts and returns the
-// cycle to NOT_STARTED, leaving employees, candidates, categories and device
-// bindings untouched.
-//
-// Guarded twice: admin only, and it requires { confirm: 'RESET' } in the body
-// so it cannot be triggered by a stray click or a replayed request.
+// POST /api/admin/reset-cycle — reset election progress from any phase.
+// Employee accounts, roles, departments, categories and the audit log are retained.
 router.post(
   '/reset-cycle',
+  validate(z.object({ confirm: z.literal('RESET') })),
   asyncHandler(async (req, res) => {
-    if (req.body?.confirm !== 'RESET') {
-      throw errors.validation('Send { "confirm": "RESET" } to reset the cycle.');
-    }
-
-    await prisma.$transaction([
-      prisma.vote.deleteMany(),
-      prisma.committeeVote.deleteMany(),
-      prisma.nomination.deleteMany(),
-      prisma.voteReceipt.deleteMany(),
-      // Candidates return to the pool but are not deleted: the people on the
-      // ballot are the cycle's data, not its progress.
-      prisma.candidate.updateMany({
-        data: {
-          inPhase2: false,
-          inPhase3: false,
-          nominationPoints: 0,
-          committeePoints: 0,
-          finalPoints: 0,
-        },
-      }),
-      prisma.settings.update({
+    const deleted = await prisma.$transaction(async (tx) => {
+      const votes = await tx.vote.deleteMany();
+      const committeeVotes = await tx.committeeVote.deleteMany();
+      const nominations = await tx.nomination.deleteMany();
+      const voteReceipts = await tx.voteReceipt.deleteMany();
+      const conflicts = await tx.conflict.deleteMany();
+      const candidates = await tx.candidate.deleteMany();
+      await tx.settings.update({
         where: { id: 1 },
         data: {
-          phase: 'NOT_STARTED',
+          phase: Phase.NOT_STARTED,
           phase1ResultsPublic: false,
           phase2ResultsPublic: false,
           resultsPublic: false,
         },
-      }),
-    ]);
-
-    const devicesRetained = await prisma.employee.count({ where: { deviceHash: { not: null } } });
+      });
+      return {
+        votes: votes.count,
+        committeeVotes: committeeVotes.count,
+        nominations: nominations.count,
+        voteReceipts: voteReceipts.count,
+        conflicts: conflicts.count,
+        candidates: candidates.count,
+      };
+    });
 
     await audit({
       actorId: req.user.id,
-      action: ACTIONS.PHASE_CHANGE,
-      details: { action: 'reset-cycle', devicesRetained },
+      action: ACTIONS.CYCLE_RESET,
+      details: { deleted },
       ip: clientIp(req),
     });
 
-    res.json({ ok: true, phase: 'NOT_STARTED', devicesRetained });
+    res.json({ ok: true, phase: Phase.NOT_STARTED, deleted });
   })
 );
 const publishSchema = z.object({

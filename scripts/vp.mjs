@@ -4,7 +4,6 @@ import { chromium } from 'playwright';
 const prisma = new PrismaClient();
 const WEB = 'http://localhost:3300';
 
-await prisma.employee.updateMany({ data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 } });
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });

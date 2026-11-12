@@ -334,7 +334,7 @@ router.get(
   })
 );
 
-// GET /api/results — published phase results, for non-admins
+// GET /api/results — publication status and released results for signed-in users
 router.get(
   '/results',
   asyncHandler(async (req, res) => {
@@ -344,9 +344,6 @@ router.get(
       phase2: req.settings?.phase2ResultsPublic ?? false,
       phase3: req.settings?.resultsPublic ?? false,
     };
-    if (!isAdmin && !Object.values(publications).some(Boolean)) {
-      throw errors.phaseClosed('Results have not been published yet.');
-    }
     const [phase1, phase2, finalResults] = await Promise.all([
       isAdmin || publications.phase1 ? computePhase1Tally() : null,
       isAdmin || publications.phase2 ? computePhase2Tally() : null,

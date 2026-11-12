@@ -16,7 +16,7 @@ require('dotenv').config({ path: require('node:path').resolve(__dirname, '../../
 //   * missing departments are created
 //   * employees are matched by phone, so re-running is safe
 //
-// It never touches nominations, votes, phases or device bindings. A dry run prints the
+// It never touches nominations, votes or phases. A dry run prints the
 // report and exits without writing.
 const fs = require('node:fs');
 const path = require('node:path');

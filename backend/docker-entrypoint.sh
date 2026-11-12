@@ -142,7 +142,7 @@ if [ -n "$DATABASE_URL" ]; then
   done
 
   if [ "$SEED" = "true" ]; then
-    echo "[entrypoint] seeding categories, departments and demo accounts"
+    echo "[entrypoint] seeding categories, departments and roster accounts"
     node prisma/seed.js
   fi
 else

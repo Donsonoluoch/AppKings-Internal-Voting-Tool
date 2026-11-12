@@ -1,5 +1,5 @@
 // End-to-end smoke test against a running stack (web on :3000 proxy → API on :4000).
-// Exercises the rules that must not break: device binding, phase gating,
+// Exercises the rules that must not break: phone login, department onboarding, phase gating,
 // self-nomination limit, one nomination per category (replaceable), the top-5 / top-15 /
 // 6–10 cuts with ties, one vote per category, confidential votes, points-only results and
 // publishing.
@@ -7,10 +7,23 @@
 //   node scripts/smoke.mjs                 # against http://localhost:3000
 //   BASE_URL=http://localhost:3000 node scripts/smoke.mjs
 //
-// It changes the database phase, so run it on demo data, then `npm run db:reset`.
+// It changes election data. Run only against a disposable local test database.
 
+import { PrismaClient } from '@prisma/client';
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
+if (!['localhost', '127.0.0.1'].includes(new URL(BASE).hostname)) {
+  throw new Error('Smoke tests only run against a local application URL.');
+}
 const API = `${BASE}/api`;
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+if (!TEST_DATABASE_URL) throw new Error('Set TEST_DATABASE_URL to a disposable local test database.');
+const testDatabase = new URL(TEST_DATABASE_URL);
+const testDatabaseName = decodeURIComponent(testDatabase.pathname.slice(1));
+if (!['localhost', '127.0.0.1'].includes(testDatabase.hostname) ||
+  (!/(?:^|[_-])(test|dev)(?:[_-]|$)/i.test(testDatabaseName) && testDatabase.port !== '5434')) {
+  throw new Error('Use a local test/dev database, or the dedicated development port 5434.');
+}
+const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
 
 let failures = 0;
 let passes = 0;
@@ -28,14 +41,12 @@ class Session {
   constructor(name) {
     this.name = name;
     this.cookie = '';
-    this.deviceToken = null;
     this.user = null;
   }
 
   async call(path, { method = 'GET', body } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (this.cookie) headers.cookie = this.cookie;
-    if (this.deviceToken) headers['x-device-token'] = this.deviceToken;
     const response = await fetch(`${API}${path}`, {
       method,
       headers,
@@ -57,36 +68,59 @@ class Session {
   }
 
   async login(phone) {
-    const result = await this.call('/auth/login', { method: 'POST', body: { phone } });
-    if (result.body?.deviceToken) this.deviceToken = result.body.deviceToken;
+    let result = await this.call('/auth/login', { method: 'POST', body: { phone } });
+    if (result.body?.requiresDepartment) {
+      const departmentId = result.body.departments?.[0]?.id;
+      if (!departmentId) throw new Error('No departments are available for first-login onboarding.');
+      result = await this.call('/auth/login', { method: 'POST', body: { phone, departmentId } });
+      this.departmentAssigned = result.status === 200;
+    }
     this.user = result.body?.user || null;
     return result;
-  }
-
-  async loginWithDevice(phone) {
-    return this.call('/auth/login', { method: 'POST', body: { phone, deviceToken: this.deviceToken } });
   }
 }
 
 async function main() {
   console.log(`Smoke test against ${BASE}\n`);
 
-  const admin = new Session('admin');
-  let result = await admin.login('+254700000001');
-  check('admin logs in on a first device and receives a device token', result.status === 200 && Boolean(admin.deviceToken));
+  const adminPhone = process.env.BOOTSTRAP_ADMIN_PHONE || '+254706831847';
+  const bootstrapAdmin = await prisma.employee.findUnique({ where: { phone: adminPhone } });
+  if (!bootstrapAdmin || bootstrapAdmin.role !== 'ADMIN') {
+    throw new Error('Test database is missing the seeded bootstrap admin account.');
+  }
+  const rosterEmployees = await prisma.employee.findMany({
+    where: { active: true, id: { not: bootstrapAdmin.id } },
+    orderBy: { phone: 'asc' },
+    take: 4,
+  });
+  if (rosterEmployees.length !== 4) throw new Error('Test database needs at least four additional active roster employees.');
+  const testRoles = ['COMMITTEE', 'COMMITTEE', 'EMPLOYEE', 'EMPLOYEE'];
+  for (const [index, employee] of rosterEmployees.entries()) {
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: { role: testRoles[index], departmentId: null },
+    });
+  }
+  const [committeePhone, , employeePhone] =
+    rosterEmployees.map((employee) => employee.phone);
 
-  // --- device binding ------------------------------------------------------
-  const intruder = new Session('intruder');
-  result = await intruder.login('+254700000001');
-  check(
-    'same number on a second device is rejected with DEVICE_MISMATCH',
-    result.status === 403 && result.body?.error?.code === 'DEVICE_MISMATCH',
-    JSON.stringify(result.body)
-  );
+  const admin = new Session('admin');
+  let result = await admin.login(adminPhone);
+  check('bootstrap admin signs in by phone number', result.status === 200 && admin.user?.role === 'ADMIN');
+
+  // --- phone-only login and department onboarding --------------------------
+  const secondBrowser = new Session('second-browser');
+  result = await secondBrowser.login(employeePhone);
+  check('an employee selects a department on first sign-in',
+    result.status === 200 && secondBrowser.departmentAssigned && Boolean(secondBrowser.user?.department));
+  const repeatLogin = new Session('repeat-login');
+  result = await repeatLogin.login(employeePhone);
+  check('the same phone can sign in again from another session',
+    result.status === 200 && repeatLogin.user?.id === secondBrowser.user?.id);
 
   // --- phase gating --------------------------------------------------------
   const emp = new Session('employee');
-  result = await emp.login('+254700000004');
+  result = await emp.login(employeePhone);
   check('employee logs in', result.status === 200 && emp.user?.role === 'EMPLOYEE');
 
   const categories = (await emp.call('/categories')).body.categories;
@@ -173,21 +207,24 @@ async function main() {
   });
   check('Team of the Year accepts a department nominee', result.status === 200, JSON.stringify(result.body));
 
-  // --- committee session (bind the device early, one login per demo person) --------
+  // --- committee session ----------------------------------------------------
   const committee = new Session('committee');
-  result = await committee.login('+254700000002');
+  result = await committee.login(committeePhone);
   check('committee member logs in', result.status === 200 && committee.user?.role === 'COMMITTEE', JSON.stringify(result.body));
 
-  // --- more employees nominating ------------------------------------------
-  // Every other demo person nominates in every category. One login per person: a phone
-  // number that is already bound to a device cannot log in a second time (§7).
+  // --- roster employees nominating -----------------------------------------
+  const voterEmployees = await prisma.employee.findMany({
+    where: { active: true, role: 'EMPLOYEE' },
+    orderBy: { phone: 'asc' },
+    select: { phone: true },
+  });
   const voters = [];
-  for (let i = 3; i <= 25; i += 1) {
-    const session = new Session(`emp${i}`);
-    const login = await session.login(`+2547000000${String(i).padStart(2, '0')}`);
+  for (const [index, voter] of voterEmployees.entries()) {
+    const session = voter.phone === employeePhone ? emp : new Session(`employee-${index}`);
+    const login = voter.phone === employeePhone ? { status: 200 } : await session.login(voter.phone);
     if (login.status === 200) voters.push(session);
   }
-  check('the other demo employees log in', voters.length >= 20, `got ${voters.length}`);
+  check('the seeded roster employees can log in', voters.length >= 20, `got ${voters.length}`);
 
   for (const [index, session] of voters.entries()) {
     for (const [categoryIndex, category] of categories.entries()) {
@@ -198,7 +235,9 @@ async function main() {
         method: 'PUT',
         body: {
           categoryId: category.id,
-          ...(category.forTeams ? { nomineeDeptId: teams[categoryIndex % teams.length].id } : { nomineeId: nominee.id }),
+          ...(category.forTeams
+            ? { nomineeDeptId: teams[(index + categoryIndex) % teams.length].id }
+            : { nomineeId: nominee.id }),
           justification: `Nomination for ${category.name}: sustained excellent work with clear, specific outcomes.`,
         },
       });
@@ -220,7 +259,8 @@ async function main() {
   result = await admin.call('/admin/candidates/confirm', { method: 'POST', body: { resolveTies: true } });
   check('admin confirms the top 15 cut', result.status === 200, JSON.stringify(result.body));
   const advancing = result.body?.people?.length ?? 0;
-  check('the pooled cut advances the top 15 people', advancing === 15, `advanced ${advancing}`);
+  check('the pooled cut includes at least 15 people plus protected category coverage',
+    advancing >= 15, `advanced ${advancing}`);
 
   result = await admin.call('/admin/phase', { method: 'POST', body: { phase: 'PHASE_2', confirm: true } });
   check('admin moves to Phase 2', result.status === 200, JSON.stringify(result.body));
@@ -270,7 +310,8 @@ async function main() {
   result = await admin.call('/admin/candidates/confirm', { method: 'POST', body: { resolveTies: true } });
   check('admin confirms the Phase 2 cut', result.status === 200, JSON.stringify(result.body));
   const shortlisted = result.body?.people?.length ?? 0;
-  check('6–10 people advance after Phase 2', shortlisted >= 6 && shortlisted <= 10, `advanced ${shortlisted}`);
+  check('the Phase 2 cut includes at least six people plus protected category coverage',
+    shortlisted >= 6, `advanced ${shortlisted}`);
 
   result = await admin.call('/admin/phase', { method: 'POST', body: { phase: 'PHASE_3', confirm: true } });
   check('admin moves to Phase 3', result.status === 200, JSON.stringify(result.body));
@@ -279,6 +320,9 @@ async function main() {
   result = await emp.call('/shortlist');
   const shortlist = result.body.categories;
   check('shortlist is visible in Phase 3', result.status === 200 && shortlist.length > 0, `categories: ${shortlist.length}`);
+  check('every final category has at least two candidates',
+    shortlist.every((category) => category.candidates.length >= 2),
+    JSON.stringify(shortlist.map((category) => category.candidates.length)));
 
   const voteTarget = shortlist[0];
   const voteBody = { categoryId: voteTarget.id, candidateId: voteTarget.candidates[0].id };
@@ -336,22 +380,17 @@ async function main() {
   result = await emp.call('/results/me');
   check('an employee can see their own points per phase', result.status === 200 && result.body.totals !== undefined, JSON.stringify(result.body).slice(0, 200));
 
-  // --- device reset --------------------------------------------------------
-  const target = (await admin.call('/admin/employees?search=%2B254700000004')).body.employees[0];
-  result = await admin.call(`/admin/devices/${target.id}/reset`, { method: 'POST' });
-  check('admin resets a device once', result.status === 200, JSON.stringify(result.body));
-  result = await admin.call(`/admin/devices/${target.id}/reset`, { method: 'POST' });
-  check('a second reset is refused', result.status === 409, JSON.stringify(result.body));
-
-  const reRegister = new Session('new-device');
-  result = await reRegister.login('+254700000004');
-  check('after a reset the next login registers the new device', result.status === 200 && Boolean(reRegister.deviceToken));
+  // --- administrator-only cycle reset --------------------------------------
+  result = await emp.call('/admin/reset-cycle', { method: 'POST', body: { confirm: 'RESET' } });
+  check('employees cannot reset election progress', result.status === 403, JSON.stringify(result.body));
+  result = await committee.call('/admin/reset-cycle', { method: 'POST', body: { confirm: 'RESET' } });
+  check('committee members cannot reset election progress', result.status === 403, JSON.stringify(result.body));
 
   console.log(`\n${passes} passed, ${failures} failed`);
-  process.exit(failures === 0 ? 0 : 1);
+  process.exitCode = failures === 0 ? 0 : 1;
 }
 
 main().catch((error) => {
   console.error('Smoke test crashed:', error);
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(() => prisma.$disconnect());

@@ -1,4 +1,4 @@
-// Five-browser test: one real browser per employee, each its own device.
+// Browser-context tests for independent sessions, phone-only login and role access.
 //
 // Lives in the DrillKe workspace but targets the AppKings Voting Tool, because
 // this is where Playwright is installed. Copy it across with:
@@ -9,15 +9,9 @@
 //
 //   npm run test:five-browsers                # headless
 //   npm run test:five-browsers -- --headed    # watch it happen
-//   TEST_DATABASE_URL=... npm run test:five-browsers -- --reset
-//                                            # clear only the five demo device bindings
 //
-// WHY REAL BROWSERS
-//   The device rule is "one device per employee". A test that calls the API five
-//   times from one process cannot prove that rule — it shares one cookie jar and
-//   one device id. These five are genuine, isolated browser contexts: separate
-//   storage, separate sessions, separate device ids. That is what a person on
-//   five phones looks like.
+// Each context has independent cookies and storage; the same roster phone is
+// intentionally allowed to sign in in multiple contexts.
 import { chromium, devices } from 'playwright';
 import { PrismaClient } from '@prisma/client';
 
@@ -27,18 +21,21 @@ import { PrismaClient } from '@prisma/client';
 // are the same origin by default.
 const WEB = process.env.TEST_WEB_URL ?? 'http://localhost:3000';
 const API = process.env.TEST_API_URL ?? WEB;
+if (!['localhost', '127.0.0.1'].includes(new URL(WEB).hostname) ||
+  !['localhost', '127.0.0.1'].includes(new URL(API).hostname)) {
+  throw new Error('Browser tests only run against a local application URL.');
+}
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const HEADED = process.argv.includes('--headed');
 const SLOW = process.argv.includes('--slow');
-const RESET = process.argv.includes('--reset');
-
-/** The five people, in the order the seed creates them. */
-const PEOPLE = [
-  { fullName: 'Grace Wanjiru', phone: '+254700000001', role: 'ADMIN' },
-  { fullName: 'Peter Otieno', phone: '+254700000002', role: 'COMMITTEE' },
-  { fullName: 'Mary Achieng', phone: '+254700000003', role: 'COMMITTEE' },
-  { fullName: 'Brian Kamau', phone: '+254700000004', role: 'EMPLOYEE' },
-  { fullName: 'Faith Njeri', phone: '+254700000005', role: 'EMPLOYEE' },
-];
+if (!TEST_DATABASE_URL) throw new Error('Set TEST_DATABASE_URL to a disposable local test database.');
+const testDatabase = new URL(TEST_DATABASE_URL);
+const testDatabaseName = decodeURIComponent(testDatabase.pathname.slice(1));
+if (!['localhost', '127.0.0.1'].includes(testDatabase.hostname) ||
+  (!/(?:^|[_-])(test|dev)(?:[_-]|$)/i.test(testDatabaseName) && testDatabase.port !== '5434')) {
+  throw new Error('Use a local test/dev database, or the dedicated development port 5434.');
+}
+const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
 
 // ─── Reporting ───────────────────────────────────────────────────────────────
 
@@ -81,12 +78,10 @@ async function waitForApp(attempts = 40) {
   throw new Error(`The API at ${API} is not responding. Is the stack running?`);
 }
 
-// ─── One browser per employee ────────────────────────────────────────────────
+// ─── Isolated browser contexts ───────────────────────────────────────────────
 
 /**
- * A fresh context with a phone viewport and its own storage. Two contexts never
- * share a cookie or a device id — which is exactly what the device restriction
- * is checking.
+ * A fresh context with a phone viewport and its own storage.
  */
 async function openDevice(browser, person) {
   const context = await browser.newContext({
@@ -100,14 +95,34 @@ async function openDevice(browser, person) {
   return { person, context, page };
 }
 
-/** Sign in through the real login form. */
+/** Sign in through the real login form, completing first-login department onboarding. */
 async function signIn(device) {
   const { page, person } = device;
+  const authCheck = page.waitForResponse((response) =>
+    response.url().includes('/api/auth/me') && response.status() === 401,
+  );
   await page.goto(`${WEB}/login`, { waitUntil: 'domcontentloaded' });
+  await authCheck;
 
   const local = person.phone.replace(/^\+254/, '').replace(/\D/g, '');
   await page.fill('#phone', local);
   await page.click('button[type="submit"]');
+
+  const departmentSelect = page.locator('#department');
+  await Promise.race([
+    page.waitForFunction(() => !window.location.pathname.startsWith('/login'), { timeout: 20000 }).catch(() => false),
+    departmentSelect.waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false),
+  ]);
+  let departmentAssigned = false;
+  if (await departmentSelect.isVisible().catch(() => false)) {
+    const options = await departmentSelect.locator('option').evaluateAll((items) =>
+      items.map((item) => item.value).filter(Boolean),
+    );
+    if (!options.length) throw new Error('no department options were presented');
+    await departmentSelect.selectOption(options[0]);
+    await page.click('button[type="submit"]');
+    departmentAssigned = true;
+  }
 
   await page.waitForFunction(() => !window.location.pathname.startsWith('/login'), { timeout: 20000 })
     .catch(() => { });
@@ -115,9 +130,9 @@ async function signIn(device) {
   const onLogin = new URL(page.url()).pathname.startsWith('/login');
   if (onLogin) {
     const alert = await page.locator('[role="alert"]').first().textContent().catch(() => null);
-    return { ok: false, message: (alert ?? 'stayed on the login page').trim() };
+    return { ok: false, message: (alert ?? 'stayed on the login page').trim(), departmentAssigned };
   }
-  return { ok: true, path: new URL(page.url()).pathname };
+  return { ok: true, path: new URL(page.url()).pathname, departmentAssigned };
 }
 
 /**
@@ -136,81 +151,115 @@ async function currentPhase(context) {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-async function resetTestDevices() {
-  if (!process.env.TEST_DATABASE_URL) {
-    throw new Error('--reset requires TEST_DATABASE_URL pointing to a disposable local test database.');
-  }
-  const database = new URL(process.env.TEST_DATABASE_URL);
-  const databaseName = decodeURIComponent(database.pathname.slice(1));
-  if (
-    !['localhost', '127.0.0.1'].includes(database.hostname) ||
-    !/(?:^|[_-])(test|dev)(?:[_-]|$)/i.test(databaseName)
-  ) {
-    throw new Error('--reset only accepts a local database whose name contains "test" or "dev".');
-  }
+async function loadPeople() {
+  const adminPhone = process.env.BOOTSTRAP_ADMIN_PHONE || '+254706831847';
+  const admin = await prisma.employee.findUnique({ where: { phone: adminPhone } });
+  if (!admin || admin.role !== 'ADMIN') throw new Error('Test database is missing the seeded bootstrap admin.');
+  const employees = await prisma.employee.findMany({
+    where: { active: true, id: { not: admin.id } },
+    orderBy: { phone: 'asc' },
+    take: 4,
+  });
+  if (employees.length !== 4) throw new Error('Test database needs at least four additional active roster employees.');
 
-  const prisma = new PrismaClient({ datasources: { db: { url: process.env.TEST_DATABASE_URL } } });
-  try {
-    await prisma.employee.updateMany({
-      where: { phone: { in: PEOPLE.map((person) => person.phone) } },
-      data: { deviceHash: null, deviceRegisteredAt: null, deviceResetCount: 0 },
+  const roles = ['COMMITTEE', 'COMMITTEE', 'EMPLOYEE', 'EMPLOYEE'];
+  for (const [index, employee] of employees.entries()) {
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: { role: roles[index], departmentId: null },
     });
-  } finally {
-    await prisma.$disconnect();
   }
-  await waitForApp();
-  console.log('\n  Reset the five demo device bindings.\n');
+  return [
+    { fullName: admin.fullName, phone: admin.phone, role: 'ADMIN' },
+    ...employees.map((employee, index) => ({
+      fullName: employee.fullName,
+      phone: employee.phone,
+      role: roles[index],
+    })),
+  ];
 }
 
 async function main() {
-  console.log(`\n\x1b[1mAppKings — five-browser device test\x1b[0m`);
+  const people = await loadPeople();
+  console.log(`\n\x1b[1mAppKings — phone login and browser-context test\x1b[0m`);
   console.log(`  web ${WEB}`);
   console.log(`  api ${API}\n`);
 
-  if (RESET) await resetTestDevices();
-  else await waitForApp();
+  await waitForApp();
 
   const browser = await chromium.launch({ headless: !HEADED });
 
   try {
-    // ── 1. Every employee signs in on their own device ──────────────────────
-    console.log('\x1b[1m1. First sign-in registers a device\x1b[0m');
+    // ── 1. First login and department onboarding ────────────────────────────
+    console.log('\x1b[1m1. Roster employees sign in and choose missing departments\x1b[0m');
     const signedIn = [];
-    for (const person of PEOPLE) {
+    for (const person of people) {
       const device = await openDevice(browser, person);
       const result = await step(
         `${person.fullName} (${person.role}) signs in for the first time`,
-        () => signIn(device),
+        async () => {
+          const signInResult = await signIn(device);
+          if (!signInResult.ok) throw new Error(signInResult.message);
+          if (person.role !== 'ADMIN' && !signInResult.departmentAssigned) {
+            throw new Error('expected first-login department selection');
+          }
+          return signInResult;
+        },
       );
-      if (!result?.ok) fail(`${person.fullName}: login failed`, result?.message);
       signedIn.push({ device, ok: Boolean(result?.ok) });
     }
 
-    // ── 2. The device rule ──────────────────────────────────────────────────
-    console.log('\n\x1b[1m2. A second device is refused\x1b[0m');
-    const intruder = await openDevice(browser, PEOPLE[4]);
+    // ── 2. Repeated phone sign-in ───────────────────────────────────────────
+    console.log('\n\x1b[1m2. The same phone can sign in in a second browser context\x1b[0m');
+    const intruder = await openDevice(browser, people[4]);
     const second = await signIn(intruder);
-    if (second.ok) {
-      fail('the same employee on a second device is refused', `it was allowed through to ${second.path}`);
-    } else if (/device/i.test(second.message)) {
-      pass('the same employee on a second device is refused (device mismatch)');
-    } else {
-      fail('the second device is refused', `refused, but not for a device reason: ${second.message}`);
-    }
+    if (second.ok) pass('the same employee can sign in from a second browser');
+    else fail('the same employee can sign in from a second browser', second.message);
     await intruder.context.close();
 
     const good = signedIn.filter((s) => s.ok).map((s) => s.device);
 
-    // ── 3. Voting ───────────────────────────────────────────────────────────
+    // ── 3. Published results are shared by every account role ───────────────
+    console.log('\n\x1b[1m3. Published results are available across roles\x1b[0m');
+    for (const device of good) {
+      await step(`${device.person.fullName} (${device.person.role}) can open published results`, async () => {
+        await device.page.getByRole('button', { name: 'Open navigation menu' }).click();
+        await device.page.getByRole('link', { name: 'Published results' }).click();
+        await device.page.getByRole('heading', { name: '2026 Awards results' }).waitFor({ timeout: 10000 });
+        for (const phaseTitle of [
+          'Phase 1 — Nominations',
+          'Phase 2 — Committee picks',
+          'Phase 3 — Final vote',
+        ]) {
+          await device.page.getByRole('heading', { name: phaseTitle }).waitFor({ timeout: 10000 });
+        }
+        return device.page.url();
+      });
+    }
+
+    // ── 4. Voting ───────────────────────────────────────────────────────────
     const phase = good.length ? await currentPhase(good[0].context) : null;
-    console.log(`\n\x1b[1m3. Voting (phase: ${phase ?? 'unknown'})\x1b[0m`);
+    console.log(`\n\x1b[1m4. Voting (phase: ${phase ?? 'unknown'})\x1b[0m`);
 
     if (phase === 'PHASE_1') {
       for (const device of good) {
         await step(`${device.person.fullName} can open the nomination screen`, async () => {
           await device.page.goto(`${WEB}/employee/nominate`, { waitUntil: 'domcontentloaded' });
           if (device.page.url().includes('/login')) throw new Error('was sent to login');
+          await device.page.getByRole('navigation', { name: 'Nomination categories' }).waitFor({ timeout: 10000 });
           return device.page.url();
+        });
+      }
+      const employee = good.find((device) => device.person.role === 'EMPLOYEE');
+      if (employee) {
+        await step('an employee can submit a nomination without an extra confirmation step', async () => {
+          await employee.page.locator('input[name="nominee"]').first().check();
+          await employee.page.getByLabel('Justification').fill(
+            'Consistently delivers careful work and supports colleagues with difficult tasks.'
+          );
+          await employee.page.getByRole('button', { name: 'Save nomination' }).click();
+          await employee.page.getByText(/Nomination saved for/).waitFor();
+          return 'nomination saved';
         });
       }
     } else if (phase === 'PHASE_3') {
@@ -218,15 +267,28 @@ async function main() {
         await step(`${device.person.fullName} can open the ballot`, async () => {
           await device.page.goto(`${WEB}/employee/vote`, { waitUntil: 'domcontentloaded' });
           if (device.page.url().includes('/login')) throw new Error('was sent to login');
+          await device.page.getByRole('progressbar', { name: 'Voting progress' }).waitFor({ timeout: 10000 });
           return device.page.url();
+        });
+      }
+      if (good.length) {
+        await step('a voter can review a selection before casting it', async () => {
+          const page = good[0].page;
+          await page.locator('input[type="radio"]').first().check();
+          await page.getByText('1 selection ready').waitFor();
+          await page.getByRole('button', { name: /Submit vote for/ }).first().click();
+          const dialog = page.getByRole('dialog');
+          await dialog.getByText(/You are voting for/).waitFor();
+          await dialog.getByRole('button', { name: 'Cancel' }).click();
+          return 'selection reviewed; no vote was submitted';
         });
       }
     } else {
       console.log(`  \x1b[33m·\x1b[0m phase is ${phase}; open a voting phase in the admin console first`);
     }
 
-    // ── 4. Roles ────────────────────────────────────────────────────────────
-    console.log('\n\x1b[1m4. Roles go where they should\x1b[0m');
+    // ── 5. Roles ────────────────────────────────────────────────────────────
+    console.log('\n\x1b[1m5. Roles go where they should\x1b[0m');
     for (const device of good.filter((d) => d.person.role === 'COMMITTEE')) {
       await step(`${device.person.fullName} (committee) can open the committee screen`, async () => {
         await device.page.goto(`${WEB}/committee/vote`, { waitUntil: 'domcontentloaded' });
@@ -252,10 +314,24 @@ async function main() {
       });
     }
 
-    // ── 5. Audit ────────────────────────────────────────────────────────────
-    console.log('\n\x1b[1m5. The admin can read the audit trail\x1b[0m');
+    // ── 6. Audit ────────────────────────────────────────────────────────────
+    console.log('\n\x1b[1m6. The admin can read the audit trail\x1b[0m');
     const admin = good.find((d) => d.person.role === 'ADMIN');
     if (admin) {
+      await step('the admin can open the reset confirmation from any phase', async () => {
+        await admin.page.goto(`${WEB}/admin`, { waitUntil: 'domcontentloaded' });
+        const resetButton = admin.page.getByRole('button', { name: 'Reset voting progress' });
+        await resetButton.waitFor({ timeout: 10000 });
+        if (await admin.page.getByRole('button', { name: /Cancel progress & start Phase 1/i }).count()) {
+          throw new Error('duplicate start-over action is still visible');
+        }
+        await resetButton.click();
+        const dialog = admin.page.getByRole('dialog');
+        await dialog.getByText(/permanently clears all nominations, votes, committee picks/i).waitFor();
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        return 'reset dialog opened and safely cancelled';
+      });
+
       await step('the admin can open the audit trail', async () => {
         await admin.page.goto(`${WEB}/admin/audit`, { waitUntil: 'domcontentloaded' });
         if (admin.page.url().includes('/login')) throw new Error('was sent to login');
@@ -285,4 +361,4 @@ async function main() {
 main().catch((error) => {
   console.error(`\n\x1b[31m${error.message}\x1b[0m\n`);
   process.exitCode = 1;
-});
+}).finally(() => prisma.$disconnect());

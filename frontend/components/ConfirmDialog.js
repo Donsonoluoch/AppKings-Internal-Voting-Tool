@@ -18,9 +18,9 @@ export default function ConfirmDialog({ open, title, children, confirmLabel = 'C
   const canConfirm = !requireText || typed.trim().toUpperCase() === requireText.toUpperCase();
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h2 className="text-lg font-semibold">{title}</h2>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div className="w-full max-w-md rounded-2xl border border-white/70 bg-white p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:p-6">
+        <h2 id="confirm-title" className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
         <div className="mt-2 text-sm text-slate-600">{children}</div>
 
         {requireText && (

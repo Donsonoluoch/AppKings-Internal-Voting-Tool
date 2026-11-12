@@ -38,16 +38,23 @@ docker compose --env-file .env -f infra/docker-compose.yml up -d --build
 
 or the npm alias: `npm run docker:up`.
 
-The production defaults do not create demo users. Set `BOOTSTRAP_ADMIN_PHONE` (and
-optionally `BOOTSTRAP_ADMIN_NAME`) in `.env`, then seed the categories and first
-administrator once:
+Production does not seed on container start. The initial seed imports only names and phone
+numbers from the roster workbook, creates the categories and 14 company departments, and
+sets Steve Martin at `BOOTSTRAP_ADMIN_PHONE` (default `+254706831847`) as the Finance admin.
+Other roster accounts start as employees with no department; they choose one at first login.
+The workbook is excluded from Docker images, so copy it into the running API container only
+for the one-time seed:
 
 ```bash
-docker compose --env-file .env -f infra/docker-compose.yml exec api node prisma/seed.js
+docker compose --env-file .env -f infra/docker-compose.yml cp "AppKings Team Data.xlsx" api:/tmp/appkings-roster.xlsx
+docker compose --env-file .env -f infra/docker-compose.yml exec -e EMPLOYEE_ROSTER_FILE=/tmp/appkings-roster.xlsx api node prisma/seed.js
 ```
 
-Keep `SEED_DEMO=false` for production. After the first admin signs in, import the real
-roster and assign `EMPLOYEE`, `COMMITTEE` and `ADMIN` roles through the employee tools.
+The workbook contains 58 data rows; the seed skips the duplicate phone and uses the
+configured admin profile for Steve's matching roster number, resulting in 57 accounts.
+Steve can assign committee and additional admin roles through the employee tools. Re-running
+the seed refreshes roster names but preserves existing employee roles, departments and
+active/eligibility settings. Do not mount or bake the workbook into an image.
 
 ### Docker Desktop
 
@@ -72,20 +79,15 @@ npm run docker:shell    # sh inside the API container
 npm run docker:down     # stop both containers; the named database volume is retained
 ```
 
-## 2. Run one app service
+## 2. Rebuild
 
-The normal deployment starts both services. These commands are useful when rebuilding
-one service; PostgreSQL remains inside the API container and persists in its named volume.
-
-### API only
+The deployment is always the same two services — there is no third container to start or
+stop. To rebuild the images and recreate the containers (the database volume is kept):
 
 ```bash
-docker build --target backend -t appkings-voting-api .
-docker run -d --name voting-api --env-file .env \
-  -e EMBEDDED_POSTGRES=true \
-  -v appkings-voting_db_data:/var/lib/postgresql/data \
-  -p 4000:4000 appkings-voting-api
-# API listens on :4000; publish it only if a separate trusted web host needs it.
+npm run docker:rebuild
+# or, in full:
+docker compose --env-file .env -f infra/docker-compose.yml up -d --build --force-recreate
 ```
 
 | Service | Port | Image target | Notes |
@@ -93,8 +95,8 @@ docker run -d --name voting-api --env-file .env \
 | `web`   | 3000 | `runtime` | Public frontend; proxies `/api` to the API service |
 | `api`   | private 4000 | `backend` | Runs Express and private PostgreSQL; data is volume-backed |
 
-> If the API is hosted separately, set `API_INTERNAL_URL` on the web service and keep the
-> same-origin `/api` proxy in the browser path.
+Each service publishes a healthcheck on `/api/health/ready`, so `web` only starts once
+`api` (and its embedded database) is ready, and `docker compose ps` shows both as healthy.
 
 ## 3. Development stack (hot reload)
 
@@ -106,8 +108,8 @@ npm run dev:stack:reset    # also deletes the database volume
 ```
 
 The development Compose stack can include a local PostgreSQL container; it is separate
-from the production topology above. Migrations run on every start. Development demo data
-is seeded only when the development database is empty, and is not recreated on restart.
+from the production topology above. Migrations run on every start. The roster is seeded
+only when the development database is empty, and is not recreated on restart.
 
 ## 4. Environment
 
@@ -123,8 +125,9 @@ is seeded only when the development database is empty, and is not recreated on r
 | `FRONTEND_URL` | `http://localhost:3000` | Allowed CORS origin |
 | `COOKIE_SECURE` | `true` | Required for production HTTPS |
 | `RUN_SEED` | `false` | Production does not seed on container start |
-| `SEED_DEMO` | `false` | Keep demo accounts out of production |
-| `BOOTSTRAP_ADMIN_PHONE` | required for initial seed | Phone number for the first admin |
+| `BOOTSTRAP_ADMIN_PHONE` | `+254706831847` | Phone number for the initial admin (Steve Martin) |
+| `BOOTSTRAP_ADMIN_NAME` | `Steve Martin` | Name for the initial admin |
+| `EMPLOYEE_ROSTER_FILE` | workbook path | Path to the roster workbook when running the seed |
 | `DB_PORT` | `5432` | Optional development Compose database port |
 | `SELF_NOMINATION_LIMIT`, `NOMINATION_MIN_JUSTIFICATION`, `TOP_PER_CATEGORY`, `PHASE1_FINALISTS`, `PHASE2_FINALISTS_MIN`, `PHASE2_FINALISTS_MAX`, `MIN_CANDIDATES_PER_CATEGORY`, `TEAM_FINALISTS`, `COMMITTEE_PICKS_PER_CATEGORY` | see `.env.example` | Every rule from context §1 |
 

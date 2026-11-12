@@ -46,7 +46,7 @@ src/
 │  ├─ validate.js      zod → req.validated
 │  └─ asyncHandler.js  Express 4 async wrapper
 ├─ routes/
-│  ├─ auth.js          login with device binding, logout, me
+│  ├─ auth.js          phone login + first-department assignment, logout, me
 │  ├─ employee.js      categories, colleagues, nominations, shortlist, votes, results
 │  ├─ committee.js     nominations view, candidates, picks, conflicts
 │  └─ admin.js         employees, departments, phases, tally, confirm cut, audit, publish
@@ -54,7 +54,7 @@ src/
    ├─ prisma.js        one client
    ├─ scoring.js       results + /results/me, assembled from the DB
    ├─ tally.js         the cuts (§5): compute, check, save
-   ├─ session.js       JWT + device token hash + cookie options
+   ├─ session.js       JWT + cookie options
    ├─ phone.js         +2547XXXXXXXX normalisation
    ├─ csv.js           small RFC-4180-ish parser (no dependency)
    ├─ settings.js      the single Settings row (holds the phase)
@@ -120,7 +120,7 @@ app/
 ├─ admin/                phase control, employees, tally, audit, results
 └─ api/[...path]/route.js  same-origin proxy → Express
 components/              AppShell, Nav, PhaseBanner, ResultsTable, ConfirmDialog, Alert, …
-lib/                     api.js (fetch + device token), auth-context.js (session, role gate)
+lib/                     api.js (fetch), auth-context.js (session, role gate)
 ```
 
 `useRequireRole` is a convenience gate only; the server re-checks every rule.

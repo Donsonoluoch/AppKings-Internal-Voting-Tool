@@ -13,8 +13,8 @@ export default function ResultsTable({
     <div className="space-y-6">
       {results.map((category) => (
         <section key={category.categoryId} className="card">
-          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold">{category.categoryName}</h2>
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-bold tracking-tight text-slate-900">{category.categoryName}</h2>
             <p className="text-xs text-slate-500">
               {category.results.length} candidate{category.results.length === 1 ? '' : 's'} · points only
             </p>
@@ -34,7 +34,7 @@ export default function ResultsTable({
               return (
                 <div
                   key={row.id}
-                  className={`rounded-lg border px-3 py-2 ${isWinner ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'}`}
+                  className={`rounded-xl border px-3.5 py-3 transition-colors ${isWinner ? 'border-emerald-200 bg-gradient-to-r from-emerald-50 to-white' : 'border-slate-100 bg-slate-50/50'}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -62,7 +62,7 @@ export default function ResultsTable({
                       </p>
                     </div>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200/80">
                     <div
                       className={`h-full ${isWinner ? 'bg-emerald-500' : 'bg-slate-400'}`}
                       style={{ width: `${Math.min(100, (score / max) * 100)}%` }}

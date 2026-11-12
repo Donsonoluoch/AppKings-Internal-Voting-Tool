@@ -6,13 +6,7 @@ const config = require('../config');
 const prisma = require('../lib/prisma');
 const { errors } = require('../lib/errors');
 const { normalizePhone } = require('../lib/phone');
-const {
-  signSession,
-  newDeviceToken,
-  hashDeviceToken,
-  safeEqual,
-  cookieOptions,
-} = require('../lib/session');
+const { signSession, cookieOptions } = require('../lib/session');
 const { audit, ACTIONS } = require('../lib/audit');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
@@ -40,8 +34,7 @@ const loginLimiter = rateLimit({
 
 const loginSchema = z.object({
   phone: z.string().min(9, 'Enter your phone number.'),
-  // The device token is sent by the browser when it already has one (§7 rules 2–4).
-  deviceToken: z.string().min(16).max(128).optional().nullable(),
+  departmentId: z.string().min(1).optional(),
 });
 
 const publicUser = (employee) => ({
@@ -50,10 +43,9 @@ const publicUser = (employee) => ({
   phone: employee.phone,
   role: employee.role,
   department: employee.department?.name ?? null,
-  hasDevice: Boolean(employee.deviceHash),
 });
 
-// POST /api/auth/login — phone + device binding. No password: the device is the credential.
+// POST /api/auth/login — staff sign in with their registered phone number.
 router.post(
   '/login',
   loginLimiter,
@@ -64,7 +56,7 @@ router.post(
 
     if (!phone) throw errors.validation('Enter a valid Kenyan number, e.g. 712 345 678.');
 
-    const employee = await prisma.employee.findUnique({
+    let employee = await prisma.employee.findUnique({
       where: { phone },
       include: { department: { select: { id: true, name: true } } },
     });
@@ -83,36 +75,36 @@ router.post(
       throw errors.inactive();
     }
 
-    let rawDeviceToken = null;
-
-    if (!employee.deviceHash) {
-      // First login: this browser becomes the registered device.
-      rawDeviceToken = newDeviceToken();
-      await prisma.employee.update({
-        where: { id: employee.id },
-        data: { deviceHash: hashDeviceToken(rawDeviceToken), deviceRegisteredAt: new Date() },
+    const { departmentId } = req.validated;
+    if (!employee.departmentId && !departmentId) {
+      const departments = await prisma.department.findMany({
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true },
       });
-    } else {
-      const candidateHash = req.validated.deviceToken
-        ? hashDeviceToken(req.validated.deviceToken)
-        : null;
-      if (!safeEqual(candidateHash, employee.deviceHash)) {
-        if (employee.deviceRegisteredAt && !req.validated.deviceToken) {
-          await audit({
-            actorId: employee.id,
-            action: ACTIONS.LOGIN_FAILED,
-            details: { reason: 'NO_DEVICE_TOKEN' },
-            ip,
-          });
-        } else {
-          await audit({
-            actorId: employee.id,
-            action: ACTIONS.LOGIN_FAILED,
-            details: { reason: 'DEVICE_MISMATCH' },
-            ip,
-          });
-        }
-        throw errors.deviceMismatch();
+      return res.json({ requiresDepartment: true, departments });
+    }
+
+    if (departmentId) {
+      const department = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!department) throw errors.validation('Choose a valid department.');
+      if (employee.departmentId && employee.departmentId !== departmentId) {
+        throw errors.validation('Your department is already set. Contact an administrator to change it.');
+      }
+      if (!employee.departmentId) {
+        await prisma.employee.update({
+          where: { id: employee.id },
+          data: { departmentId },
+        });
+        await audit({
+          actorId: employee.id,
+          action: ACTIONS.DEPARTMENT_ASSIGNED,
+          details: { departmentId },
+          ip,
+        });
+        employee = await prisma.employee.findUnique({
+          where: { id: employee.id },
+          include: { department: { select: { id: true, name: true } } },
+        });
       }
     }
 
@@ -123,8 +115,6 @@ router.post(
 
     return res.json({
       user: publicUser(employee),
-      // Returned once, on first registration only. The browser keeps it in localStorage.
-      deviceToken: rawDeviceToken,
       phase: req.phase,
     });
   })

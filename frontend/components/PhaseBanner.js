@@ -15,22 +15,25 @@ const STYLES = {
 export default function PhaseBanner({ phase, audience = 'employee' }) {
   if (!phase) return null;
   const meta = PHASE_META[phase] || PHASE_META.NOT_STARTED;
-  const index = PHASES.indexOf(phase);
+  const progressIndex = Math.max(0, Math.min(PHASES.indexOf(phase) - 1, 3));
 
   return (
-    <div className={`mb-6 rounded-xl border px-4 py-3 ${STYLES[phase] || STYLES.NOT_STARTED}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{meta.label}</p>
-        <div className="flex gap-1" aria-hidden="true">
+    <div className={`mb-6 rounded-2xl border px-4 py-3.5 shadow-sm sm:px-5 ${STYLES[phase] || STYLES.NOT_STARTED}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-60">Election status</p>
+          <p className="mt-0.5 text-sm font-bold">{meta.label}</p>
+        </div>
+        <div className="flex gap-1.5" aria-hidden="true">
           {PHASES.slice(1, 5).map((step, stepIndex) => (
             <span
               key={step}
-              className={`h-1.5 w-6 rounded-full ${stepIndex < index ? 'bg-current opacity-70' : 'bg-current opacity-20'}`}
+              className={`h-1.5 w-8 rounded-full transition-opacity ${stepIndex < progressIndex ? 'bg-current opacity-70' : stepIndex === progressIndex ? 'bg-current opacity-90' : 'bg-current opacity-20'}`}
             />
           ))}
         </div>
       </div>
-      <p className="mt-1 text-sm opacity-80">{audience === 'employee' ? meta.employee : meta.tagline}</p>
+      <p className="mt-1 text-sm leading-5 opacity-80">{audience === 'employee' ? meta.employee : meta.tagline}</p>
     </div>
   );
 }
