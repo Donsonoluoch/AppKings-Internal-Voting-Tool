@@ -18,7 +18,10 @@ async function loadUser(req, _res, next) {
 
     const employee = await prisma.employee.findUnique({
       where: { id: payload.sub },
-      include: { department: { select: { id: true, name: true } } },
+      include: {
+        department: { select: { id: true, name: true } },
+        team: { select: { id: true, name: true } },
+      },
     });
     if (!employee || !employee.active) return next();
 

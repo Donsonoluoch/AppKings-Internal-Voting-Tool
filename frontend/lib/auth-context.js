@@ -30,9 +30,9 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  const login = useCallback(async (phone, departmentId) => {
-    const data = await apiLogin(phone, departmentId);
-    if (data.requiresDepartment) return data;
+  const login = useCallback(async (phone, departmentId, teamId) => {
+    const data = await apiLogin(phone, departmentId, teamId);
+    if (data.requiresDepartment || data.requiresTeam) return data;
 
     const me = await get('/auth/me');
     setState({

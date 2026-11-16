@@ -27,7 +27,7 @@ const candidateInclude = {
       department: { select: { name: true } },
     },
   },
-  department: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true } },
   committeeVotes: { select: { memberId: true } },
   conflicts: { select: { memberId: true, reason: true } },
 };
@@ -38,7 +38,7 @@ function presentCandidate(candidate, memberId) {
   return {
     id: candidate.id,
     categoryId: candidate.categoryId,
-    name: candidate.employee ? candidate.employee.fullName : candidate.department?.name,
+    name: candidate.employee ? candidate.employee.fullName : candidate.team?.name,
     kind: candidate.employee ? 'employee' : 'team',
     department: candidate.employee?.department?.name ?? null,
     eligible: candidate.employee ? candidate.employee.eligible && candidate.employee.active : true,
@@ -63,27 +63,27 @@ router.get(
         include: {
           nominator: { select: { fullName: true } },
           nominee: { select: { id: true, fullName: true, department: { select: { name: true } } } },
-          nomineeDept: { select: { id: true, name: true } },
+          nomineeTeam: { select: { id: true, name: true } },
         },
       }),
       prisma.candidate.findMany({
-        select: { categoryId: true, employeeId: true, departmentId: true, inPhase2: true },
+        select: { categoryId: true, employeeId: true, teamId: true, inPhase2: true },
       }),
     ]);
 
     const madeCandidate = new Set(
-      candidateRows.map((row) => `${row.categoryId}:${row.employeeId || row.departmentId}`)
+      candidateRows.map((row) => `${row.categoryId}:${row.employeeId || row.teamId}`)
     );
 
     const grouped = categories.map((category) => {
       const byNominee = new Map();
       for (const nomination of nominations.filter((n) => n.categoryId === category.id)) {
-        const nomineeKey = nomination.nomineeId || nomination.nomineeDeptId;
+        const nomineeKey = nomination.nomineeId || nomination.nomineeTeamId;
         if (!byNominee.has(nomineeKey)) {
           byNominee.set(nomineeKey, {
             nomineeId: nomination.nomineeId,
-            nomineeDeptId: nomination.nomineeDeptId,
-            name: nomination.nominee?.fullName ?? nomination.nomineeDept?.name ?? 'Unknown',
+            nomineeTeamId: nomination.nomineeTeamId,
+            name: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? 'Unknown',
             department: nomination.nominee?.department?.name ?? null,
             nominationCount: 0,
             nominators: [],
@@ -152,7 +152,7 @@ router.get(
         categoryId: candidate.categoryId,
         ...(candidate.employeeId
           ? { nomineeId: candidate.employeeId }
-          : { nomineeDeptId: candidate.departmentId }),
+          : { nomineeTeamId: candidate.teamId }),
       },
       include: { nominator: { select: { fullName: true } } },
       orderBy: { createdAt: 'asc' },

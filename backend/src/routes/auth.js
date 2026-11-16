@@ -35,7 +35,13 @@ const loginLimiter = rateLimit({
 const loginSchema = z.object({
   phone: z.string().min(9, 'Enter your phone number.'),
   departmentId: z.string().min(1).optional(),
+  teamId: z.string().min(1).optional(),
 });
+
+const userInclude = {
+  department: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true } },
+};
 
 const publicUser = (employee) => ({
   id: employee.id,
@@ -43,6 +49,7 @@ const publicUser = (employee) => ({
   phone: employee.phone,
   role: employee.role,
   department: employee.department?.name ?? null,
+  team: employee.team?.name ?? null,
 });
 
 // POST /api/auth/login — staff sign in with their registered phone number.
@@ -58,7 +65,7 @@ router.post(
 
     let employee = await prisma.employee.findUnique({
       where: { phone },
-      include: { department: { select: { id: true, name: true } } },
+      include: userInclude,
     });
 
     if (!employee) {
@@ -75,14 +82,21 @@ router.post(
       throw errors.inactive();
     }
 
-    const { departmentId } = req.validated;
-    if (!employee.departmentId && !departmentId) {
-      const departments = await prisma.department.findMany({
-        orderBy: { name: 'asc' },
-        select: { id: true, name: true },
+    const { departmentId, teamId } = req.validated;
+    if ((!employee.departmentId && !departmentId) || (!employee.teamId && !teamId)) {
+      const [departments, teams] = await Promise.all([
+        prisma.department.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+        prisma.team.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+      ]);
+      return res.json({
+        requiresDepartment: !employee.departmentId && !departmentId,
+        departments,
+        requiresTeam: !employee.teamId && !teamId,
+        teams,
       });
-      return res.json({ requiresDepartment: true, departments });
     }
+
+    const profile = {};
 
     if (departmentId) {
       const department = await prisma.department.findUnique({ where: { id: departmentId } });
@@ -90,22 +104,30 @@ router.post(
       if (employee.departmentId && employee.departmentId !== departmentId) {
         throw errors.validation('Your department is already set. Contact an administrator to change it.');
       }
-      if (!employee.departmentId) {
-        await prisma.employee.update({
-          where: { id: employee.id },
-          data: { departmentId },
-        });
-        await audit({
-          actorId: employee.id,
-          action: ACTIONS.DEPARTMENT_ASSIGNED,
-          details: { departmentId },
-          ip,
-        });
-        employee = await prisma.employee.findUnique({
-          where: { id: employee.id },
-          include: { department: { select: { id: true, name: true } } },
-        });
+      if (!employee.departmentId) profile.departmentId = departmentId;
+    }
+
+    if (teamId) {
+      const team = await prisma.team.findUnique({ where: { id: teamId } });
+      if (!team) throw errors.validation('Choose a valid team.');
+      if (employee.teamId && employee.teamId !== teamId) {
+        throw errors.validation('Your team is already set. Contact an administrator to change it.');
       }
+      if (!employee.teamId) profile.teamId = teamId;
+    }
+
+    if (Object.keys(profile).length > 0) {
+      employee = await prisma.employee.update({
+        where: { id: employee.id },
+        data: profile,
+        include: userInclude,
+      });
+      await audit({
+        actorId: employee.id,
+        action: ACTIONS.DEPARTMENT_ASSIGNED,
+        details: profile,
+        ip,
+      });
     }
 
     const token = signSession(employee);

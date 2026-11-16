@@ -109,9 +109,11 @@ async function signIn(device) {
   await page.click('button[type="submit"]');
 
   const departmentSelect = page.locator('#department');
+  const teamSelect = page.locator('#team');
   await Promise.race([
     page.waitForFunction(() => !window.location.pathname.startsWith('/login'), { timeout: 20000 }).catch(() => false),
     departmentSelect.waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false),
+    teamSelect.waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false),
   ]);
   let departmentAssigned = false;
   if (await departmentSelect.isVisible().catch(() => false)) {
@@ -120,8 +122,18 @@ async function signIn(device) {
     );
     if (!options.length) throw new Error('no department options were presented');
     await departmentSelect.selectOption(options[0]);
-    await page.click('button[type="submit"]');
     departmentAssigned = true;
+  }
+  if (await teamSelect.isVisible().catch(() => false)) {
+    const options = await teamSelect.locator('option').evaluateAll((items) =>
+      items.map((item) => item.value).filter(Boolean),
+    );
+    if (!options.length) throw new Error('no team options were presented');
+    await teamSelect.selectOption(options[0]);
+    departmentAssigned = true;
+  }
+  if (await page.locator('button[type="submit"]').isEnabled().catch(() => false)) {
+    await page.click('button[type="submit"]');
   }
 
   await page.waitForFunction(() => !window.location.pathname.startsWith('/login'), { timeout: 20000 })
@@ -191,7 +203,7 @@ async function main() {
 
   try {
     // ── 1. First login and department onboarding ────────────────────────────
-    console.log('\x1b[1m1. Roster employees sign in and choose missing departments\x1b[0m');
+    console.log('\x1b[1m1. Roster employees sign in and choose missing departments and teams\x1b[0m');
     const signedIn = [];
     for (const person of people) {
       const device = await openDevice(browser, person);

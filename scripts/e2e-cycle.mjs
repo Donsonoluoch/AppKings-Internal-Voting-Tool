@@ -50,18 +50,25 @@ function heading(text) {
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
 async function login(phone) {
-  const signIn = async (departmentId) => fetch(`${BASE}/api/auth/login`, {
+  const signIn = async (profile = {}) => fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone: phone.replace(/^\+254/, ''), ...(departmentId ? { departmentId } : {}) }),
+    body: JSON.stringify({ phone: phone.replace(/^\+254/, ''), ...profile }),
   });
   let res = await signIn();
   let body = await res.json().catch(() => ({}));
   let departmentAssigned = false;
-  if (body.requiresDepartment) {
-    const departmentId = body.departments?.[0]?.id;
-    if (!departmentId) throw new Error(`login ${phone}: no departments available for onboarding`);
-    res = await signIn(departmentId);
+  if (body.requiresDepartment || body.requiresTeam) {
+    const profile = {};
+    if (body.requiresDepartment) {
+      profile.departmentId = body.departments?.[0]?.id;
+      if (!profile.departmentId) throw new Error(`login ${phone}: no departments available for onboarding`);
+    }
+    if (body.requiresTeam) {
+      profile.teamId = body.teams?.[0]?.id;
+      if (!profile.teamId) throw new Error(`login ${phone}: no teams available for onboarding`);
+    }
+    res = await signIn(profile);
     body = await res.json().catch(() => ({}));
     departmentAssigned = true;
   }
@@ -171,7 +178,7 @@ async function main() {
 
   // Each employee nominates one colleague per category, rotating the pick so the
   // tally is not uniform and the cut has something to cut.
-  const departments = await prisma.department.findMany({ orderBy: { name: 'asc' } });
+  const teams = await prisma.team.findMany({ orderBy: { name: 'asc' } });
   const ME = 'A consistent, visible contribution throughout the year.';
 
   // The Phase 1 cut needs 15 people in the POOLED ranking, so every eligible
@@ -195,7 +202,7 @@ async function main() {
     const voter = person.voter;
     let nominations = 0;
     for (const [c, category] of categories.entries()) {
-      // A nominee is either a colleague (nomineeId) or a team (nomineeDeptId),
+      // A nominee is either a colleague (nomineeId) or a team (nomineeTeamId),
       // never both: the schema refines on exactly one being present.
       //
       // The pick is spread across the whole roster rather than rotated one step
@@ -208,7 +215,7 @@ async function main() {
         ? (intendedPickIndex + 1) % employees.length
         : intendedPickIndex;
       const body = category.forTeams
-        ? { categoryId: category.id, nomineeDeptId: departments[(i + c) % departments.length].id, justification: ME }
+        ? { categoryId: category.id, nomineeTeamId: teams[(i + c) % teams.length].id, justification: ME }
         : { categoryId: category.id, nomineeId: employees[pickIndex].id, justification: ME };
       const res = await voter('PUT', '/api/nominations', body);
       if (res.ok) nominations += 1;

@@ -69,10 +69,17 @@ class Session {
 
   async login(phone) {
     let result = await this.call('/auth/login', { method: 'POST', body: { phone } });
-    if (result.body?.requiresDepartment) {
-      const departmentId = result.body.departments?.[0]?.id;
-      if (!departmentId) throw new Error('No departments are available for first-login onboarding.');
-      result = await this.call('/auth/login', { method: 'POST', body: { phone, departmentId } });
+    if (result.body?.requiresDepartment || result.body?.requiresTeam) {
+      const body = { phone };
+      if (result.body.requiresDepartment) {
+        body.departmentId = result.body.departments?.[0]?.id;
+        if (!body.departmentId) throw new Error('No departments are available for first-login onboarding.');
+      }
+      if (result.body.requiresTeam) {
+        body.teamId = result.body.teams?.[0]?.id;
+        if (!body.teamId) throw new Error('No teams are available for first-login onboarding.');
+      }
+      result = await this.call('/auth/login', { method: 'POST', body });
       this.departmentAssigned = result.status === 200;
     }
     this.user = result.body?.user || null;
@@ -196,16 +203,16 @@ async function main() {
   const teamCategory = categories.find((c) => c.forTeams);
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: teamCategory.id, nomineeId: colleague.id, justification: 'Should not work: Team of the Year takes a department, not a person.' },
+    body: { categoryId: teamCategory.id, nomineeId: colleague.id, justification: 'Should not work: Team of the Year takes a team, not a person.' },
   });
   check('Team of the Year rejects employee nominees', result.status === 400, JSON.stringify(result.body));
 
   const teams = colleagues.teams;
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: teamCategory.id, nomineeDeptId: teams[0].id, justification: 'The team shipped three releases while short two engineers and never missed a date.' },
+    body: { categoryId: teamCategory.id, nomineeTeamId: teams[0].id, justification: 'The team shipped three releases while short two engineers and never missed a date.' },
   });
-  check('Team of the Year accepts a department nominee', result.status === 200, JSON.stringify(result.body));
+  check('Team of the Year accepts a team nominee', result.status === 200, JSON.stringify(result.body));
 
   // --- committee session ----------------------------------------------------
   const committee = new Session('committee');
@@ -236,7 +243,7 @@ async function main() {
         body: {
           categoryId: category.id,
           ...(category.forTeams
-            ? { nomineeDeptId: teams[(index + categoryIndex) % teams.length].id }
+            ? { nomineeTeamId: teams[(index + categoryIndex) % teams.length].id }
             : { nomineeId: nominee.id }),
           justification: `Nomination for ${category.name}: sustained excellent work with clear, specific outcomes.`,
         },

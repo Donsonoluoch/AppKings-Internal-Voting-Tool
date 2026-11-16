@@ -1,4 +1,4 @@
-// Seeds the award categories, company departments, roster and initial admin.
+// Seeds the award categories, company teams, staff departments, roster and initial admin.
 // The roster import reads only first name, last name and phone from the workbook.
 // Existing employee roles and departments are preserved on repeat runs.
 
@@ -7,7 +7,7 @@ require('dotenv').config({ path: require('node:path').resolve(__dirname, '../../
 const path = require('node:path');
 const readXlsxFile = require('read-excel-file/node');
 const { PrismaClient, Role, Phase } = require('@prisma/client');
-const { CATEGORIES } = require('@appkings/shared');
+const { CATEGORIES, DEPARTMENTS, TEAMS } = require('@appkings/shared');
 const { normalizePhone } = require('../src/lib/phone');
 
 const prisma = new PrismaClient();
@@ -16,22 +16,7 @@ const ROSTER_FILE = process.env.EMPLOYEE_ROSTER_FILE
 const ADMIN_PHONE = normalizePhone(process.env.BOOTSTRAP_ADMIN_PHONE || '+254706831847');
 const ADMIN_NAME = process.env.BOOTSTRAP_ADMIN_NAME?.trim() || 'Steve Martin';
 
-const DEPARTMENTS = [
-  'Administration',
-  'Customer Success',
-  'Engineering',
-  'Finance',
-  'Human Resources',
-  'Information Technology',
-  'Legal and Compliance',
-  'Marketing and Communications',
-  'Operations',
-  'Other / Not Listed',
-  'Product and Design',
-  'Procurement and Logistics',
-  'Sales',
-  'Support',
-];
+
 
 function cellText(value) {
   if (value === null || value === undefined) return '';
@@ -114,6 +99,16 @@ async function main() {
   }
   console.log(`Departments: ${DEPARTMENTS.length} ready`);
 
+  const teams = {};
+  for (const name of TEAMS) {
+    teams[name] = await prisma.team.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+  console.log(`Teams: ${TEAMS.length} ready`);
+
   await prisma.settings.upsert({
     where: { id: 1 },
     update: {},
@@ -132,6 +127,7 @@ async function main() {
       fullName: ADMIN_NAME,
       role: Role.ADMIN,
       departmentId: departments.Finance.id,
+      teamId: teams.Academics.id,
       active: true,
       eligible: true,
     },
@@ -140,6 +136,7 @@ async function main() {
       phone: ADMIN_PHONE,
       role: Role.ADMIN,
       departmentId: departments.Finance.id,
+      teamId: teams.Academics.id,
     },
   });
   console.log(`Administrator: ${ADMIN_NAME} (${ADMIN_PHONE})`);
@@ -175,7 +172,7 @@ async function main() {
     console.log(`Administrator phone matched ${adminRosterMatches} roster row; using the configured admin profile.`);
   }
   console.log(`Roster: ${created} created, ${updated} updated; only names and phone numbers imported.`);
-  console.log('Seed complete. Employee departments are selected at first sign-in.');
+  console.log('Seed complete. Employee departments and teams are selected at first sign-in.');
 }
 
 main()

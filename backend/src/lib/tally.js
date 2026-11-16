@@ -51,7 +51,7 @@ async function computePhase1Tally(client = prisma) {
     client.nomination.findMany({
       include: {
         nominee: { select: { id: true, fullName: true, department: { select: { name: true } } } },
-        nomineeDept: { select: { id: true, name: true } },
+        nomineeTeam: { select: { id: true, name: true } },
       },
     }),
   ]);
@@ -60,14 +60,14 @@ async function computePhase1Tally(client = prisma) {
     const counts = new Map();
     for (const nomination of nominations) {
       if (nomination.categoryId !== category.id) continue;
-      const key = nomination.nomineeId || nomination.nomineeDeptId;
+      const key = nomination.nomineeId || nomination.nomineeTeamId;
       if (!key) continue;
       if (!counts.has(key)) {
         counts.set(key, {
           key,
           employeeId: nomination.nomineeId,
-          departmentId: nomination.nomineeDeptId,
-          name: nomination.nominee?.fullName ?? nomination.nomineeDept?.name ?? 'Unknown',
+          teamId: nomination.nomineeTeamId,
+          name: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? 'Unknown',
           department: nomination.nominee?.department?.name ?? null,
           points: 0,
         });
@@ -144,7 +144,7 @@ async function computePhase2Tally(client = prisma) {
       where: { inPhase2: true },
       include: {
         employee: { select: { id: true, fullName: true, department: { select: { name: true } } } },
-        department: { select: { id: true, name: true } },
+        team: { select: { id: true, name: true } },
       },
     }),
     client.committeeVote.groupBy({ by: ['candidateId'], _count: { _all: true } }),
@@ -158,8 +158,8 @@ async function computePhase2Tally(client = prisma) {
       .map((candidate) => ({
         candidateId: candidate.id,
         employeeId: candidate.employeeId,
-        departmentId: candidate.departmentId,
-        name: candidate.employee?.fullName ?? candidate.department?.name ?? 'Unknown',
+        teamId: candidate.teamId,
+        name: candidate.employee?.fullName ?? candidate.team?.name ?? 'Unknown',
         department: candidate.employee?.department?.name ?? null,
         points: pickCounts.get(candidate.id) || 0,
       }));
@@ -237,7 +237,7 @@ function presentPhaseResults(tally, phase) {
     winnerId: null,
     tiebreakRequired: false,
     results: category.rows.map((row) => ({
-      id: row.candidateId || row.employeeId || row.departmentId || row.key,
+      id: row.candidateId || row.employeeId || row.teamId || row.key,
       name: row.name,
       kind: category.forTeams ? 'team' : 'employee',
       department: row.department ?? null,
@@ -330,16 +330,16 @@ async function applyCut(tx, tally) {
             update: data,
             create: { categoryId: category.categoryId, employeeId: finalist.employeeId, ...data },
           });
-        } else if (finalist.departmentId) {
+        } else if (finalist.teamId) {
           await tx.candidate.upsert({
             where: {
-              categoryId_departmentId: {
+              categoryId_teamId: {
                 categoryId: category.categoryId,
-                departmentId: finalist.departmentId,
+                teamId: finalist.teamId,
               },
             },
             update: data,
-            create: { categoryId: category.categoryId, departmentId: finalist.departmentId, ...data },
+            create: { categoryId: category.categoryId, teamId: finalist.teamId, ...data },
           });
         }
       }
@@ -349,13 +349,13 @@ async function applyCut(tx, tally) {
 
   if (tally.phase === 'PHASE_2') {
     const advancing = selectAdvancingPeople(tally, phase2FinalistsMax);
-    const advancingTeams = new Set(tally.teams.slice(0, teamFinalists).map((team) => team.departmentId));
+    const advancingTeams = new Set(tally.teams.slice(0, teamFinalists).map((team) => team.teamId));
 
     for (const category of tally.categories) {
       for (const finalist of category.finalists) {
         const inPhase3 = finalist.employeeId
           ? advancing.has(finalist.employeeId)
-          : advancingTeams.has(finalist.departmentId);
+          : advancingTeams.has(finalist.teamId);
         await tx.candidate.update({
           where: { id: finalist.candidateId },
           data: { committeePoints: finalist.points, inPhase3 },

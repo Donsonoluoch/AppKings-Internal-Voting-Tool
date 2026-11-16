@@ -13,6 +13,26 @@ const PHASES = /** @type {const} */ ([
 
 const ROLES = /** @type {const} */ (['EMPLOYEE', 'COMMITTEE', 'ADMIN']);
 
+// Business teams. Team of the Year nominees are chosen from this list.
+const TEAMS = /** @type {const} */ ([
+  'Academics',
+  'Parastatals',
+  'Private',
+  'Portals',
+  'Marketing',
+  'Collection',
+  'Hospitality',
+]);
+
+// Staff departments. Every employee belongs to exactly one department.
+const DEPARTMENTS = /** @type {const} */ ([
+  'Technical',
+  'Operations',
+  'Finance',
+  'HR/Admin',
+  'Marketing',
+]);
+
 // §4 — seeded in prisma/seed.js. `forTeams` is true only for Team of the Year.
 const CATEGORIES = [
   {
@@ -96,6 +116,8 @@ const ERRORS = {
 module.exports = {
   PHASES,
   ROLES,
+  TEAMS,
+  DEPARTMENTS,
   CATEGORIES,
   DEFAULT_RULES,
   ERRORS,

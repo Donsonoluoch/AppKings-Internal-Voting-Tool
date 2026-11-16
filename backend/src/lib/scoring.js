@@ -11,8 +11,8 @@ function presentCandidate(candidate) {
     // The person (or team) this row is about. `id` is the CANDIDATE row, so the
     // same employee shortlisted in two categories has two different ids — which
     // is why the overall ranking listed them twice. Grouping must use this.
-    personId: candidate.employeeId ?? candidate.departmentId ?? candidate.id,
-    name: candidate.employee ? candidate.employee.fullName : candidate.department?.name,
+    personId: candidate.employeeId ?? candidate.teamId ?? candidate.id,
+    name: candidate.employee ? candidate.employee.fullName : candidate.team?.name,
     kind: candidate.employee ? 'employee' : 'team',
     department: candidate.employee?.department?.name ?? null,
     nominationPoints: candidate.nominationPoints,
@@ -33,7 +33,7 @@ async function computeResults(client = prisma) {
       where: { inPhase3: true },
       include: {
         employee: { select: { id: true, fullName: true, department: { select: { name: true } } } },
-        department: { select: { id: true, name: true } },
+        team: { select: { id: true, name: true } },
       },
     }),
   ]);

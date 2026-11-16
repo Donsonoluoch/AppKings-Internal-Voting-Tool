@@ -1,8 +1,12 @@
 // AppKings Solutions — 2026 Employee Awards Voting System
 // Points only: one pick per category, 1 point each, no percentages (§1, §6).
 //
-// Note on departments (§8): Department exists only to support Team of the Year, where the
-// nominee is a team rather than a person. Nothing else in the system depends on it.
+// Two groupings (§8):
+//   * Department — a staff department (Technical, Operations, Finance, HR/Admin, Marketing).
+//     Every employee belongs to one; it is picked at first sign-in and shown on profiles.
+//   * Team — a business team (Academics, Parastals, Private, Portals, Marketing, Collection,
+//     Hospitality). Team exists only to support Team of the Year, where the nominee is a
+//     team rather than a person.
 
 generator client {
   provider = "prisma-client-js"
@@ -29,6 +33,12 @@ enum Phase {
 }
 
 model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Team {
   id          String       @id @default(cuid())
   name        String       @unique
   employees   Employee[]
@@ -45,6 +55,8 @@ model Employee {
   active             Boolean     @default(true) // allowed to log in
   departmentId       String?
   department         Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  teamId             String?
+  team               Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
@@ -57,6 +69,7 @@ model Employee {
   voteReceipts    VoteReceipt[]
 
   @@index([departmentId])
+  @@index([teamId])
 }
 
 model Category {
@@ -75,7 +88,7 @@ model Nomination {
   categoryId    String
   nominatorId   String
   nomineeId     String? // employee nominee
-  nomineeDeptId String? // team nominee (Team of the Year)
+  nomineeTeamId String? // team nominee (Team of the Year)
   justification String
   isSelf        Boolean  @default(false)
   createdAt     DateTime @default(now())
@@ -83,14 +96,14 @@ model Nomination {
 
   category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   nominator   Employee    @relation("Nominator", fields: [nominatorId], references: [id], onDelete: Cascade)
-  nominee     Employee?   @relation("Nominee", fields: [nomineeId], references: [id], onDelete: Cascade)
-  nomineeDept Department? @relation(fields: [nomineeDeptId], references: [id], onDelete: Cascade)
+  nominee     Employee? @relation("Nominee", fields: [nomineeId], references: [id], onDelete: Cascade)
+  nomineeTeam Team?     @relation(fields: [nomineeTeamId], references: [id], onDelete: Cascade)
 
   // One nomination per employee per category; it can be replaced until Phase 1 closes.
   @@unique([categoryId, nominatorId])
   @@index([nominatorId, isSelf])
   @@index([categoryId, nomineeId])
-  @@index([categoryId, nomineeDeptId])
+  @@index([categoryId, nomineeTeamId])
 }
 
 // One row per category slot: a person (or team) that made the top 5 of a category after
@@ -99,7 +112,7 @@ model Candidate {
   id               String   @id @default(cuid())
   categoryId       String
   employeeId       String?
-  departmentId     String?
+  teamId           String?
   nominationPoints Int      @default(0) // Phase 1 points in this category, saved when Phase 1 closes
   committeePoints  Int      @default(0) // Phase 2 points in this category, saved when Phase 2 closes
   finalPoints      Int      @default(0) // Phase 3 points in this category, saved when voting closes
@@ -109,13 +122,13 @@ model Candidate {
 
   category       Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   employee       Employee?       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  department     Department?     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  team           Team?           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   committeeVotes CommitteeVote[]
   conflicts      Conflict[]
   votes          Vote[]
 
   @@unique([categoryId, employeeId])
-  @@unique([categoryId, departmentId])
+  @@unique([categoryId, teamId])
   @@index([categoryId, inPhase2])
   @@index([categoryId, inPhase3])
 }

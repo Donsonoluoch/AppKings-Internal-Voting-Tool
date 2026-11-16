@@ -34,7 +34,7 @@ router.get(
 router.get(
   '/colleagues',
   asyncHandler(async (req, res) => {
-    const [employees, departments] = await Promise.all([
+    const [employees, teams] = await Promise.all([
       prisma.employee.findMany({
         where: { eligible: true, active: true },
         orderBy: { fullName: 'asc' },
@@ -45,7 +45,7 @@ router.get(
           department: { select: { name: true } },
         },
       }),
-      prisma.department.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+      prisma.team.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     ]);
 
     res.json({
@@ -55,7 +55,7 @@ router.get(
         department: employee.department?.name ?? null,
         isSelf: employee.id === req.user.id,
       })),
-      teams: departments.map((team) => ({ id: team.id, name: team.name })),
+      teams: teams.map((team) => ({ id: team.id, name: team.name })),
     });
   })
 );
@@ -89,10 +89,10 @@ const nominationSchema = z
   .object({
     categoryId: z.string().min(1),
     nomineeId: z.string().min(1).optional().nullable(),
-    nomineeDeptId: z.string().min(1).optional().nullable(),
+    nomineeTeamId: z.string().min(1).optional().nullable(),
     justification: z.string().trim().optional(),
   })
-  .refine((value) => Boolean(value.nomineeId) !== Boolean(value.nomineeDeptId), {
+  .refine((value) => Boolean(value.nomineeId) !== Boolean(value.nomineeTeamId), {
     message: 'Pick one nominee: an employee, or a team for Team of the Year.',
   });
 
@@ -103,7 +103,7 @@ router.put(
   requirePhase('PHASE_1'),
   validate(nominationSchema),
   asyncHandler(async (req, res) => {
-    const { categoryId, nomineeId, nomineeDeptId } = req.validated;
+    const { categoryId, nomineeId, nomineeTeamId } = req.validated;
     const justification = (req.validated.justification || '').trim();
     const { minJustification } = config.rules;
 
@@ -118,7 +118,7 @@ router.put(
 
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
     if (!category) throw errors.notFound('Category not found.');
-    if (category.forTeams && !nomineeDeptId) {
+    if (category.forTeams && !nomineeTeamId) {
       throw errors.validation('Team of the Year nominees must be a team.');
     }
     if (!category.forTeams && !nomineeId) {
@@ -131,8 +131,8 @@ router.put(
       if (!nominee.eligible) throw errors.validation('That employee is not eligible to be nominated.');
       if (!nominee.active) throw errors.validation('That employee is not active.');
     }
-    if (nomineeDeptId) {
-      const team = await prisma.department.findUnique({ where: { id: nomineeDeptId } });
+    if (nomineeTeamId) {
+      const team = await prisma.team.findUnique({ where: { id: nomineeTeamId } });
       if (!team) throw errors.notFound('Team not found.');
     }
 
@@ -156,7 +156,7 @@ router.put(
 
       const data = {
         nomineeId: nomineeId || null,
-        nomineeDeptId: nomineeDeptId || null,
+        nomineeTeamId: nomineeTeamId || null,
         justification,
         isSelf,
       };
@@ -167,7 +167,7 @@ router.put(
         create: { categoryId, nominatorId: req.user.id, ...data },
         include: {
           nominee: { select: { id: true, fullName: true } },
-          nomineeDept: { select: { id: true, name: true } },
+          nomineeTeam: { select: { id: true, name: true } },
         },
       });
     });
@@ -178,7 +178,7 @@ router.put(
       details: {
         categoryId,
         nomineeId: nomineeId || null,
-        nomineeDeptId: nomineeDeptId || null,
+        nomineeTeamId: nomineeTeamId || null,
         isSelf,
       },
       ip: clientIp(req),
@@ -188,7 +188,7 @@ router.put(
       nomination: {
         id: nomination.id,
         categoryId: nomination.categoryId,
-        nominee: nomination.nominee?.fullName ?? nomination.nomineeDept?.name ?? null,
+        nominee: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? null,
         justification: nomination.justification,
         isSelf: nomination.isSelf,
         createdAt: nomination.createdAt,
@@ -207,7 +207,7 @@ router.get(
       include: {
         category: { select: categorySelect },
         nominee: { select: { id: true, fullName: true } },
-        nomineeDept: { select: { id: true, name: true } },
+        nomineeTeam: { select: { id: true, name: true } },
       },
     });
 
@@ -217,8 +217,8 @@ router.get(
         categoryId: nomination.categoryId,
         categoryName: nomination.category.name,
         nomineeId: nomination.nomineeId,
-        nomineeDeptId: nomination.nomineeDeptId,
-        nominee: nomination.nominee?.fullName ?? nomination.nomineeDept?.name ?? null,
+        nomineeTeamId: nomination.nomineeTeamId,
+        nominee: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? null,
         justification: nomination.justification,
         isSelf: nomination.isSelf,
         createdAt: nomination.createdAt,
@@ -244,7 +244,7 @@ router.get(
           employee: {
             select: { id: true, fullName: true, department: { select: { name: true } } },
           },
-          department: { select: { id: true, name: true } },
+          team: { select: { id: true, name: true } },
         },
       }),
       prisma.voteReceipt.findMany({ where: { voterId: req.user.id }, select: { categoryId: true } }),
@@ -260,7 +260,7 @@ router.get(
             .filter((candidate) => candidate.categoryId === category.id)
             .map((candidate) => ({
               id: candidate.id,
-              name: candidate.employee ? candidate.employee.fullName : candidate.department?.name,
+              name: candidate.employee ? candidate.employee.fullName : candidate.team?.name,
               kind: candidate.employee ? 'employee' : 'team',
               department: candidate.employee?.department?.name ?? null,
             }))
