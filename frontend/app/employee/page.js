@@ -52,7 +52,9 @@ function Dashboard() {
             Welcome, {user?.fullName?.split(' ')[0] ?? 'there'}.
           </h1>
           <p className="mt-2 text-sm text-blue-100/75">
-            {user.department ? `Department · ${user.department}` : 'Your voice helps recognize our best.'}
+            {user.department
+              ? `Department · ${user.department}${user.team ? `  ·  Team · ${user.team}` : ''}`
+              : 'Your voice helps recognize our best.'}
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {step.href ? (

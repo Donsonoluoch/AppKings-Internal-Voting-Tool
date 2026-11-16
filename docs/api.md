@@ -35,12 +35,13 @@ Error shape, always:
 
 ### `POST /auth/login`
 ```json
-{ "phone": "0712345678", "departmentId": "…optional…" }
+{ "phone": "0712345678", "departmentId": "…optional…", "teamId": "…optional…" }
 ```
-For an employee without a department, the first request returns
-`{ requiresDepartment: true, departments: [{ id, name }] }` without creating a session.
-Submit again with the selected `departmentId` to save it and sign in.
-`200` → `{ user: { id, fullName, phone, role, department }, phase }`. Subsequent sign-ins
+For an employee without a department or team, the first request returns
+`{ requiresDepartment, departments: [{ id, name }], requiresTeam, teams: [{ id, name }] }`
+without creating a session (either flag may be false). Submit again with the selected
+`departmentId` and/or `teamId` to save them and sign in.
+`200` → `{ user: { id, fullName, phone, role, department, team }, phase }`. Subsequent sign-ins
 require only the phone number. Rate limited to `LOGIN_RATE_LIMIT` (default 10) failed
 attempts per 15 minutes per IP. Phone-only login does not verify control of the phone number.
 
@@ -67,12 +68,12 @@ No phone numbers, ever.
 ```json
 { "categoryId": "…", "nomineeId": "…", "justification": "at least 20 characters" }
 ```
-Team of the Year takes `nomineeDeptId` instead of `nomineeId`. Replaces this employee's
+Team of the Year takes `nomineeTeamId` instead of `nomineeId`. Replaces this employee's
 previous nomination in that category. `200` → `{ nomination }`.
 `409 CONFLICT` when the one allowed self-nomination is already used in another category.
 
 ### `GET /nominations/mine`
-→ `{ nominations: [{ id, categoryId, categoryName, nomineeId, nomineeDeptId, nominee, justification, isSelf, createdAt }] }`
+→ `{ nominations: [{ id, categoryId, categoryName, nomineeId, nomineeTeamId, nominee, justification, isSelf, createdAt }] }`
 
 ### `GET /shortlist` — Phase 3 onwards
 → `{ categories: [{ ...category, hasVoted, candidates: [{ id, name, kind: "employee"|"team", department }] }] }`
@@ -104,7 +105,7 @@ Admins may also preview unpublished results.
 ## Committee (`COMMITTEE` or `ADMIN`)
 
 ### `GET /committee/nominations` — Phase 1 or 2
-→ `{ categories: [{ ...category, nominees: [{ nomineeId, nomineeDeptId, name, department, nominationCount, nominators, justifications, isCandidate }] }] }`
+→ `{ categories: [{ ...category, nominees: [{ nomineeId, nomineeTeamId, name, department, nominationCount, nominators, justifications, isCandidate }] }] }`
 
 ### `GET /committee/candidates` — Phase 2
 → `{ categories: [{ ...category, candidates: [{ id, name, kind, department, eligible, nominationPoints, inPhase2, inPhase3, myPick, hasConflict, conflictReason }] }], picksPerCategory }`
@@ -137,8 +138,9 @@ in that category. `403 FORBIDDEN` on a conflict.
 ### Employees
 - `GET /admin/employees?search=` → `{ employees: [...] }` (includes phone — admin only)
 - `POST /admin/employees/import` `{ csv, dryRun? }` → `{ created, updated, skipped: [{ line, reason }], departmentsCreated }`
-- `PATCH /admin/employees/:id` `{ fullName?, role?, eligible?, active?, departmentId? }`
+- `PATCH /admin/employees/:id` `{ fullName?, role?, eligible?, active?, departmentId?, teamId? }`
 - `GET /admin/departments` / `POST /admin/departments` `{ name }`
+- `GET /admin/teams` → `{ teams: [{ id, name }] }`
 
 ### Phases and cuts
 - `POST /admin/phase` `{ phase, confirm: true }` → `{ phase, phaseMeta }`. Forward only.

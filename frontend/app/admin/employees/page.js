@@ -7,12 +7,13 @@ import Spinner from '@/components/Spinner';
 import { get, patch, post } from '@/lib/api';
 
 const CSV_TEMPLATE = `fullName,phone,department,role
-Otieno Peter,0712345678,Engineering,EMPLOYEE
+Otieno Peter,0712345678,Technical,EMPLOYEE
 Grace Wanjiru,0722000001,Operations,COMMITTEE`;
 
 function Employees() {
   const [employees, setEmployees] = useState(null);
   const [departments, setDepartments] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -22,10 +23,15 @@ function Employees() {
   const fileRef = useRef(null);
 
   const load = () => {
-    Promise.all([get(`/admin/employees${search ? `?search=${encodeURIComponent(search)}` : ''}`), get('/admin/departments')])
-      .then(([employeeData, departmentData]) => {
+    Promise.all([
+      get(`/admin/employees${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+      get('/admin/departments'),
+      get('/admin/teams'),
+    ])
+      .then(([employeeData, departmentData, teamData]) => {
         setEmployees(employeeData.employees);
         setDepartments(departmentData.departments);
+        setTeams(teamData.teams);
       })
       .catch((loadError) => setError(loadError.message));
   };
@@ -70,7 +76,7 @@ function Employees() {
   };
 
   return (
-    <AppShell title="Employees" description="Import the roster and manage roles, departments, eligibility and account access." minRole="ADMIN">
+    <AppShell title="Employees" description="Import the roster and manage roles, departments, teams, eligibility and account access." minRole="ADMIN">
       <Alert tone="error" className="mb-3">{error}</Alert>
       <Alert tone="success" className="mb-3">{success}</Alert>
 
@@ -127,13 +133,14 @@ function Employees() {
 
         {employees && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-3">Name</th>
                   <th className="py-2 pr-3">Phone</th>
                   <th className="py-2 pr-3">Role</th>
                   <th className="py-2 pr-3">Department</th>
+                  <th className="py-2 pr-3">Team</th>
                   <th className="py-2 pr-3">Eligible</th>
                   <th className="py-2 pr-3">Access</th>
                 </tr>
@@ -167,6 +174,20 @@ function Employees() {
                         {departments.map((department) => (
                           <option key={department.id} value={department.id}>
                             {department.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <select
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                        value={employee.teamId || ''}
+                        onChange={(event) => saveEmployee(employee, { teamId: event.target.value || null })}
+                      >
+                        <option value="">—</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
                           </option>
                         ))}
                       </select>

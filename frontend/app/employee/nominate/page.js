@@ -19,7 +19,7 @@ function Nominate() {
 
   const [categoryId, setCategoryId] = useState('');
   const [nomineeId, setNomineeId] = useState('');
-  const [nomineeDeptId, setNomineeDeptId] = useState('');
+  const [nomineeTeamId, setNomineeTeamId] = useState('');
   const [justification, setJustification] = useState('');
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState(null); // the nomination being replaced
@@ -51,7 +51,7 @@ function Nominate() {
         setCategoryId(first.id);
         setEditingId(existing ? existing.id : null);
         setJustification(existing?.justification ?? '');
-        if (first.forTeams) setNomineeDeptId(existing?.nomineeDeptId || '');
+        if (first.forTeams) setNomineeTeamId(existing?.nomineeTeamId || '');
         else setNomineeId(existing?.nomineeId || '');
       }
     } catch (loadError) {
@@ -90,11 +90,11 @@ function Nominate() {
     setSearch('');
     const target = categories.find((item) => item.id === id);
     if (target?.forTeams) {
-      setNomineeDeptId(existing?.nomineeDeptId || '');
+      setNomineeTeamId(existing?.nomineeTeamId || '');
       setNomineeId('');
     } else {
       setNomineeId(existing?.nomineeId || '');
-      setNomineeDeptId('');
+      setNomineeTeamId('');
     }
   };
 
@@ -110,14 +110,14 @@ function Nominate() {
     try {
       const result = await put('/nominations', {
         categoryId,
-        ...(isTeamCategory ? { nomineeDeptId } : { nomineeId }),
+        ...(isTeamCategory ? { nomineeTeamId } : { nomineeId }),
         justification,
       });
       const saved = {
         ...result.nomination,
         categoryName: category.name,
         nomineeId: isTeamCategory ? null : nomineeId,
-        nomineeDeptId: isTeamCategory ? nomineeDeptId : null,
+        nomineeTeamId: isTeamCategory ? nomineeTeamId : null,
       };
       setMine((current) => [saved, ...current.filter((item) => item.categoryId !== categoryId)]);
       setSummary((current) => current && ({
@@ -138,7 +138,7 @@ function Nominate() {
   };
 
   const canSubmit =
-    categoryId && justification.trim().length >= minLength && (isTeamCategory ? nomineeDeptId : nomineeId);
+    categoryId && justification.trim().length >= minLength && (isTeamCategory ? nomineeTeamId : nomineeId);
 
   return (
     <AppShell title="Nominate a colleague" description="One nomination per colleague per category. Justify every nomination." minRole="EMPLOYEE">
@@ -226,17 +226,17 @@ function Nominate() {
 
         {isTeamCategory ? (
           <div>
-            <p className="label">Choose a team or department</p>
+            <p className="label">Choose a team</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {teams.map((team) => (
                 <button
                   key={team.id}
                   type="button"
-                  aria-pressed={nomineeDeptId === team.id}
+                  aria-pressed={nomineeTeamId === team.id}
                   className={`rounded-xl border p-3.5 text-left text-sm font-medium shadow-sm transition ${
-                    nomineeDeptId === team.id ? 'border-brand-400 bg-brand-50 text-brand-900 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200 hover:bg-brand-50/50'
+                    nomineeTeamId === team.id ? 'border-brand-400 bg-brand-50 text-brand-900 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200 hover:bg-brand-50/50'
                   }`}
-                  onClick={() => setNomineeDeptId(team.id)}
+                  onClick={() => setNomineeTeamId(team.id)}
                   disabled={phase !== 'PHASE_1'}
                 >
                   {team.name}

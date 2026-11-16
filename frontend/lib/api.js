@@ -49,11 +49,11 @@ export const post = (path, body) => api(path, { method: 'POST', body });
 export const put = (path, body) => api(path, { method: 'PUT', body });
 export const patch = (path, body) => api(path, { method: 'PATCH', body });
 
-/** Login uses a registered number and collects a department only if the roster has none. */
-export function login(phone, departmentId) {
+/** Login uses a registered number and collects a department/team only if the roster has none. */
+export function login(phone, departmentId, teamId) {
   return api('/auth/login', {
     method: 'POST',
-    body: { phone, ...(departmentId ? { departmentId } : {}) },
+    body: { phone, ...(departmentId ? { departmentId } : {}), ...(teamId ? { teamId } : {}) },
   });
 }
 

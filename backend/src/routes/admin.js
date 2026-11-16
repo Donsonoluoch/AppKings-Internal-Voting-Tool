@@ -139,7 +139,10 @@ router.get(
 
 // ---------------------------------------------------------------- employees
 
-const employeeInclude = { department: { select: { id: true, name: true } } };
+const employeeInclude = {
+  department: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true } },
+};
 
 function presentEmployee(employee) {
   return {
@@ -151,6 +154,8 @@ function presentEmployee(employee) {
     active: employee.active,
     department: employee.department?.name ?? null,
     departmentId: employee.departmentId,
+    team: employee.team?.name ?? null,
+    teamId: employee.teamId,
   };
 }
 
@@ -283,6 +288,7 @@ const patchEmployeeSchema = z.object({
   eligible: z.boolean().optional(),
   active: z.boolean().optional(),
   departmentId: z.string().nullable().optional(),
+  teamId: z.string().nullable().optional(),
 });
 
 // PATCH /api/admin/employees/:id
@@ -310,7 +316,17 @@ router.patch(
   })
 );
 
-// ---------------------------------------------------------------- departments
+// ---------------------------------------------------------------- teams & departments
+
+router.get(
+  '/teams',
+  asyncHandler(async (_req, res) => {
+    const teams = await prisma.team.findMany({
+      orderBy: { name: 'asc' },
+    });
+    res.json({ teams: teams.map((team) => ({ id: team.id, name: team.name })) });
+  })
+);
 
 router.get(
   '/departments',
@@ -418,7 +434,7 @@ router.post(
       ok: true,
       phase,
       people: tally.people.filter((person) => person.advances).map((person) => person.id),
-      teams: (tally.teams || []).filter((team) => team.advances).map((team) => team.departmentId),
+      teams: (tally.teams || []).filter((team) => team.advances).map((team) => team.teamId),
       resolvedTies: problems,
     });
   })
