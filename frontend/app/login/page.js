@@ -17,9 +17,6 @@ function LoginForm() {
   const [departments, setDepartments] = useState([]);
   const [departmentId, setDepartmentId] = useState('');
   const [needsDepartment, setNeedsDepartment] = useState(false);
-  const [teams, setTeams] = useState([]);
-  const [teamId, setTeamId] = useState('');
-  const [needsTeam, setNeedsTeam] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -34,12 +31,12 @@ function LoginForm() {
     setError('');
     setBusy(true);
     try {
-      const result = await login(phone.trim(), departmentId || undefined, teamId || undefined);
-      if (result.requiresDepartment || result.requiresTeam) {
+      // The only thing asked at sign-in is the department (§7). A person's team is staff
+      // data an administrator sets, never something the employee is asked to know.
+      const result = await login(phone.trim(), departmentId || undefined);
+      if (result.requiresDepartment) {
         setDepartments(result.departments ?? []);
-        setNeedsDepartment(Boolean(result.requiresDepartment));
-        setTeams(result.teams ?? []);
-        setNeedsTeam(Boolean(result.requiresTeam));
+        setNeedsDepartment(true);
         return;
       }
       router.replace(next && next.startsWith('/') ? next : roleHome(result.user.role));
@@ -83,7 +80,7 @@ function LoginForm() {
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
               required
-              disabled={needsDepartment || needsTeam}
+              disabled={needsDepartment}
             />
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Enter the phone number registered by your administrator.
@@ -115,32 +112,7 @@ function LoginForm() {
             </div>
           )}
 
-          {needsTeam && (
-            <div>
-              <label className="label" htmlFor="team">
-                Choose your team
-              </label>
-              <select
-                id="team"
-                className="input"
-                value={teamId}
-                onChange={(event) => setTeamId(event.target.value)}
-                required
-              >
-                <option value="">Select a team…</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Your team is needed for Team of the Year nominations. Contact Steve if it needs changing later.
-              </p>
-            </div>
-          )}
-
-          {(needsDepartment || needsTeam) && (
+          {(needsDepartment) && (
             <button
               type="button"
               className="text-sm font-medium text-brand-700 hover:text-brand-900"
@@ -148,9 +120,6 @@ function LoginForm() {
                 setNeedsDepartment(false);
                 setDepartments([]);
                 setDepartmentId('');
-                setNeedsTeam(false);
-                setTeams([]);
-                setTeamId('');
               }}
             >
               Use a different phone number
@@ -162,18 +131,18 @@ function LoginForm() {
           <button
             type="submit"
             className="btn-primary w-full"
-            disabled={busy || (needsDepartment && !departmentId) || (needsTeam && !teamId)}
+            disabled={busy || (needsDepartment && !departmentId)}
           >
             {busy
               ? 'Signing in…'
-              : needsDepartment || needsTeam
-                ? `Save ${[needsDepartment && 'department', needsTeam && 'team'].filter(Boolean).join(' and ')} and sign in`
+              : needsDepartment
+                ? 'Save department and sign in'
                 : 'Continue'}
           </button>
           </form>
 
           <p className="mt-5 text-center text-xs leading-relaxed text-slate-500">
-            Sign in with your registered phone number. Your name, department and team appear after sign-in.
+            Sign in with your registered phone number. Your name and department appear after sign-in.
           </p>
         </section>
         <p className="mt-6 text-center text-xs tracking-wide text-blue-100/75">

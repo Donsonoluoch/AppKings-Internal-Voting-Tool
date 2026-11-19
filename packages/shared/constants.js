@@ -13,18 +13,23 @@ const PHASES = /** @type {const} */ ([
 
 const ROLES = /** @type {const} */ (['EMPLOYEE', 'COMMITTEE', 'ADMIN']);
 
-// Business teams. Team of the Year nominees are chosen from this list.
-const TEAMS = /** @type {const} */ ([
-  'Academics',
-  'Parastatals',
-  'Private',
-  'Portals',
-  'Marketing',
-  'Collection',
-  'Hospitality',
-]);
+// Business teams. These are the Team of the Year nominees — the only voting use of a
+// "team". `code` is the stable key stored in the database: the display `name` can be
+// reworded, the code must not change.
+const TEAM_DEFINITIONS = [
+  { code: 'academics', name: 'Academics' },
+  { code: 'parastatals', name: 'Parastatals' },
+  { code: 'private', name: 'Private' },
+  { code: 'portals', name: 'Portals' },
+  { code: 'marketing', name: 'Marketing' },
+  { code: 'collection', name: 'Collection' },
+  { code: 'hospitality', name: 'Hospitality' },
+];
 
-// Staff departments. Every employee belongs to exactly one department.
+const TEAMS = TEAM_DEFINITIONS.map((team) => team.name);
+
+// Staff departments. A profile label only: it identifies who a person is when they sign in
+// and is shown next to their name. No voting rule, cut, tally or result reads a department.
 const DEPARTMENTS = /** @type {const} */ ([
   'Technical',
   'Operations',
@@ -117,6 +122,7 @@ module.exports = {
   PHASES,
   ROLES,
   TEAMS,
+  TEAM_DEFINITIONS,
   DEPARTMENTS,
   CATEGORIES,
   DEFAULT_RULES,

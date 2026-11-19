@@ -78,7 +78,7 @@ function AdminResults() {
       <Alert tone="success" className="mb-3">{success}</Alert>
 
       {!data && !error && <Spinner label="Computing results…" />}
-      {hasTies && (
+      {hasTies && data?.settled?.phase3 !== false && (
         <Alert tone="warning" className="mb-3">
           At least one final category is still tied after the earlier-phase tie-break. Confirm before publishing the final results.
         </Alert>
@@ -116,6 +116,11 @@ function AdminResults() {
                   showBreakdown={phase.stage === 'PHASE_3'}
                   scoreKey={phase.scoreKey}
                   scoreLabel={phase.label}
+                  settled={phase.stage === 'PHASE_1'
+                    ? data.settled?.phase1 !== false
+                    : phase.stage === 'PHASE_2'
+                      ? data.settled?.phase2 !== false
+                      : data.settled?.phase3 !== false}
                 />
               </section>
             );

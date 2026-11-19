@@ -20,7 +20,7 @@ async function loadUser(req, _res, next) {
       where: { id: payload.sub },
       include: {
         department: { select: { id: true, name: true } },
-        team: { select: { id: true, name: true } },
+        team: { select: { id: true, name: true, code: true } },
       },
     });
     if (!employee || !employee.active) return next();

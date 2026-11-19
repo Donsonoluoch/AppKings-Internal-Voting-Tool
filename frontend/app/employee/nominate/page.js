@@ -103,6 +103,26 @@ function Nominate() {
     fillFrom(mine, id);
   };
 
+  /**
+   * After a save the form is cleared and the flow moves on to the next category that still
+   * needs a nomination, so a voter can work straight down the list without touching the
+   * category tabs.
+   */
+  const moveToNextCategory = (list, savedId) => {
+    const remaining = categories.filter(
+      (item) => item.id !== savedId && !list.some((nomination) => nomination.categoryId === item.id)
+    );
+    const next = remaining[0] ?? categories.find((item) => item.id !== savedId);
+    if (!next) return null;
+    setCategoryId(next.id);
+    setNomineeId('');
+    setNomineeTeamId('');
+    setJustification('');
+    setSearch('');
+    setEditingId(null);
+    return next;
+  };
+
   const submit = async () => {
     setBusy(true);
     setError('');
@@ -116,10 +136,12 @@ function Nominate() {
       const saved = {
         ...result.nomination,
         categoryName: category.name,
+        nomineeName: result.nomination.nominee,
         nomineeId: isTeamCategory ? null : nomineeId,
         nomineeTeamId: isTeamCategory ? nomineeTeamId : null,
       };
-      setMine((current) => [saved, ...current.filter((item) => item.categoryId !== categoryId)]);
+      const nextList = [saved, ...mine.filter((item) => item.categoryId !== categoryId)];
+      setMine(nextList);
       setSummary((current) => current && ({
         ...current,
         total: current.total + (editingId ? 0 : 1),
@@ -127,9 +149,12 @@ function Nominate() {
           + Number(Boolean(existingInCategory?.isSelf))
           - Number(Boolean(saved.isSelf)),
       }));
-      setEditingId(saved.id);
-      setSearch('');
-      setSuccess(`${editingId ? 'Nomination updated' : 'Nomination saved'} for ${category.name}.`);
+
+      const next = moveToNextCategory(nextList, categoryId);
+      setSuccess(
+        `${editingId ? 'Nomination updated' : 'Nomination saved'} for ${category.name} — ${saved.nominee}.`
+          + (next ? ` Now nominating for ${next.name}.` : ' You have covered every category.')
+      );
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -310,7 +335,7 @@ function Nominate() {
         </div>
 
         <button type="submit" className="btn-primary w-full sm:w-auto" disabled={!canSubmit || phase !== 'PHASE_1' || busy}>
-          {busy ? 'Saving…' : existingInCategory ? 'Save changes' : 'Save nomination'}
+          {busy ? 'Saving…' : existingInCategory ? 'Save changes' : 'Save nomination and continue'}
         </button>
       </form>
       )}

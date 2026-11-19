@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { get, login as apiLogin, post } from './api';
 
@@ -30,9 +30,31 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  const login = useCallback(async (phone, departmentId, teamId) => {
-    const data = await apiLogin(phone, departmentId, teamId);
-    if (data.requiresDepartment || data.requiresTeam) return data;
+  // The active phase only changes in the admin console. Re-reading /auth/me when the user
+  // comes back to the tab means opening Phase 1/2/3 is picked up without a sign-out —
+  // otherwise the banner, nav and nomination/vote screens stay on the old phase.
+  const refreshing = useRef(false);
+  useEffect(() => {
+    const onFocus = async () => {
+      if (refreshing.current || document.visibilityState === 'hidden') return;
+      refreshing.current = true;
+      try {
+        await refresh();
+      } finally {
+        refreshing.current = false;
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [refresh]);
+
+  const login = useCallback(async (phone, departmentId) => {
+    const data = await apiLogin(phone, departmentId);
+    if (data.requiresDepartment) return data;
 
     const me = await get('/auth/me');
     setState({

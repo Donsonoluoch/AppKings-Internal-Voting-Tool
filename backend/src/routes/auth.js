@@ -12,19 +12,39 @@ const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { clientIp } = require('../middleware/audit');
 const asyncHandler = require('../middleware/asyncHandler');
-const { PHASE_META } = require('@appkings/shared');
+const { PHASE_META, DEPARTMENTS } = require('@appkings/shared');
 
 const router = express.Router();
 
-/** §7 rule 8 — rate limit login attempts (default 10 per 15 min per IP). */
+// Two routes can protect the sign-in flow:
+//   * department — by IP: that is a mistake, not an attack, and a whole office shares one IP;
+//   * loginBurst — by PHONE: 20 attempts per number per 10 minutes. This is what actually
+//     slows down someone guessing through the roster, while never locking out a colleague.
+const phoneKey = (req) => normalizePhone(req.body?.phone) || req.ip;
+
+/** §7 — phone numbers are public within the company, so a failed-attempt limiter is the
+ *  only thing standing between a guesser and any account. Counts failed logins per number. */
 const loginLimiter = rateLimit({
-  windowMs: config.loginWindowMinutes * 60 * 1000,
-  limit: config.loginMaxPerWindow,
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skip: () => config.env === 'test',
-  // Count failed attempts only. 60 people behind one office IP would otherwise lock each
-  // other out mid go-live; guessing wrong still counts (the handler below does the work).
+  skipSuccessfulRequests: true,
+  keyGenerator: phoneKey,
+  handler: (_req, res) =>
+    res.status(429).json({
+      error: { code: 'RATE_LIMITED', message: 'Too many attempts for this number. Try again in a few minutes.' },
+    }),
+});
+
+/** A soft per-IP guard: only someone typing garbage at scale reaches it. */
+const loginBurst = rateLimit({
+  windowMs: config.loginWindowMinutes * 60 * 1000,
+  limit: 200,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => config.env === 'test',
   skipSuccessfulRequests: true,
   handler: (_req, res) =>
     res.status(429).json({
@@ -35,12 +55,11 @@ const loginLimiter = rateLimit({
 const loginSchema = z.object({
   phone: z.string().min(9, 'Enter your phone number.'),
   departmentId: z.string().min(1).optional(),
-  teamId: z.string().min(1).optional(),
 });
 
 const userInclude = {
   department: { select: { id: true, name: true } },
-  team: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true, code: true } },
 };
 
 const publicUser = (employee) => ({
@@ -50,11 +69,13 @@ const publicUser = (employee) => ({
   role: employee.role,
   department: employee.department?.name ?? null,
   team: employee.team?.name ?? null,
+  teamCode: employee.team?.code ?? null,
 });
 
 // POST /api/auth/login — staff sign in with their registered phone number.
 router.post(
   '/login',
+  loginBurst,
   loginLimiter,
   validate(loginSchema),
   asyncHandler(async (req, res) => {
@@ -82,41 +103,41 @@ router.post(
       throw errors.inactive();
     }
 
-    const { departmentId, teamId } = req.validated;
-    if ((!employee.departmentId && !departmentId) || (!employee.teamId && !teamId)) {
-      const [departments, teams] = await Promise.all([
-        prisma.department.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-        prisma.team.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-      ]);
+// §7 — the ONLY thing an employee chooses at sign-in is their department. A person's team is
+// staff data an administrator sets, never something the employee is asked to know.
+    const { departmentId } = req.validated;
+    if (!employee.departmentId && !departmentId) {
+      const departments = await prisma.department.findMany({ select: { id: true, name: true } });
+      // Configured order (packages/shared/constants.js), not alphabetical: the list the
+      // employee sees matches the list the system validates against.
+      const departmentOrder = (name) => {
+        const index = DEPARTMENTS.indexOf(name);
+        return index === -1 ? DEPARTMENTS.length : index;
+      };
       return res.json({
-        requiresDepartment: !employee.departmentId && !departmentId,
-        departments,
-        requiresTeam: !employee.teamId && !teamId,
-        teams,
+        requiresDepartment: true,
+        departments: [...departments].sort((a, b) => departmentOrder(a.name) - departmentOrder(b.name)),
       });
     }
 
     const profile = {};
 
+    // The department chosen at sign-in is a profile label (§8): it is set once for a brand-new
+    // account, and a later sign-in never fails because of it. If someone picks a different one,
+    // the choice is honoured (and audited) — guessing a phone number still only gets you into an
+    // account you cannot use, and an admin can see the change in the audit log.
     if (departmentId) {
       const department = await prisma.department.findUnique({ where: { id: departmentId } });
       if (!department) throw errors.validation('Choose a valid department.');
-      if (employee.departmentId && employee.departmentId !== departmentId) {
-        throw errors.validation('Your department is already set. Contact an administrator to change it.');
-      }
-      if (!employee.departmentId) profile.departmentId = departmentId;
-    }
-
-    if (teamId) {
-      const team = await prisma.team.findUnique({ where: { id: teamId } });
-      if (!team) throw errors.validation('Choose a valid team.');
-      if (employee.teamId && employee.teamId !== teamId) {
-        throw errors.validation('Your team is already set. Contact an administrator to change it.');
-      }
-      if (!employee.teamId) profile.teamId = teamId;
+      if (employee.departmentId !== departmentId) profile.departmentId = departmentId;
     }
 
     if (Object.keys(profile).length > 0) {
+      // A brand-new account signing in before the cycle opens is doing its first sign-in; it
+      // is labelled as onboarding so the audit trail separates it from a later department
+      // change. Either way the row records exactly what changed.
+      const firstSignIn = req.phase === 'NOT_STARTED' && !employee.departmentId;
+      const previousDepartmentId = employee.departmentId ?? null;
       employee = await prisma.employee.update({
         where: { id: employee.id },
         data: profile,
@@ -124,8 +145,8 @@ router.post(
       });
       await audit({
         actorId: employee.id,
-        action: ACTIONS.DEPARTMENT_ASSIGNED,
-        details: profile,
+        action: firstSignIn ? ACTIONS.ONBOARDING_COMPLETED : ACTIONS.DEPARTMENT_ASSIGNED,
+        details: { ...profile, previousDepartmentId },
         ip,
       });
     }

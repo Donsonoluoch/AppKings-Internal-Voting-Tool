@@ -58,17 +58,12 @@ async function login(phone) {
   let res = await signIn();
   let body = await res.json().catch(() => ({}));
   let departmentAssigned = false;
-  if (body.requiresDepartment || body.requiresTeam) {
-    const profile = {};
-    if (body.requiresDepartment) {
-      profile.departmentId = body.departments?.[0]?.id;
-      if (!profile.departmentId) throw new Error(`login ${phone}: no departments available for onboarding`);
-    }
-    if (body.requiresTeam) {
-      profile.teamId = body.teams?.[0]?.id;
-      if (!profile.teamId) throw new Error(`login ${phone}: no teams available for onboarding`);
-    }
-    res = await signIn(profile);
+  // Sign-in asks for the department only. A person's team is staff data an administrator
+  // sets, never something the employee is asked for at login.
+  if (body.requiresDepartment) {
+    const departmentId = body.departments?.[0]?.id;
+    if (!departmentId) throw new Error(`login ${phone}: no departments available for onboarding`);
+    res = await signIn({ departmentId });
     body = await res.json().catch(() => ({}));
     departmentAssigned = true;
   }

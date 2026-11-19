@@ -36,6 +36,26 @@ function Employees() {
       .catch((loadError) => setError(loadError.message));
   };
 
+  /** Make the database departments/teams match packages/shared/constants.js. */
+  const syncTaxonomy = async () => {
+    setBusy(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await post('/admin/taxonomy/sync', {});
+      setSuccess(
+        `Lists synced: ${result.departments} departments, ${result.teams} teams. `
+          + `${result.departments.created + result.teams.created} added, `
+          + `${result.departments.removed + result.teams.removed} unused removed.`
+      );
+      load();
+    } catch (syncError) {
+      setError(syncError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(load, [search]);
 
   const importCsv = async () => {
@@ -81,7 +101,17 @@ function Employees() {
       <Alert tone="success" className="mb-3">{success}</Alert>
 
       <section className="card">
-        <h2 className="text-base font-semibold">Import from CSV</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Import from CSV</h2>
+          <button type="button" className="btn-secondary text-xs" onClick={syncTaxonomy} disabled={busy}>
+            Sync departments &amp; teams
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          The department and team lists come from <code>packages/shared/constants.js</code> (seeded on
+          setup). Sync creates any missing value and removes unused extras; a value still assigned to
+          someone is kept.
+        </p>
         <p className="mt-1 text-xs text-slate-500">
           Columns: <code>fullName, phone, department, role</code>. Existing phone numbers are updated. Departments that do
           not exist are created.
@@ -120,7 +150,7 @@ function Employees() {
 
       <section className="card mt-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">Team ({employees?.length ?? '…'})</h2>
+          <h2 className="text-base font-semibold">Employees ({employees?.length ?? '…'})</h2>
           <input
             className="input max-w-xs"
             placeholder="Search name or phone"

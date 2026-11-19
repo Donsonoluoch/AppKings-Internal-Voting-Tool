@@ -117,7 +117,7 @@ A user has one `role`: `EMPLOYEE`, `COMMITTEE` or `ADMIN`. Committee and Admin c
 5. Innovator of the Year
 6. Outstanding Leadership
 7. Employee of the Year 2026
-8. Team of the Year (nominees are departments or teams)
+8. Team of the Year (nominees are the 7 teams in `TEAMS`, never departments)
 
 Seed these 8 categories at setup. Each has a short `criteria` text shown to committee members when scoring.
 They live in `packages/shared/constants.js` and are upserted by `backend/prisma/seed.js`.
@@ -143,7 +143,7 @@ NOT_STARTED → PHASE_1 (nominations) → PHASE_2 (committee) → PHASE_3 (final
 2. **Category finalists.** Take the top 5 per category (Phase 1 only).
 3. **Pooled ranking.** Each person's total is the sum of their points across the categories where they made the top 5. Rank people by that total.
 4. **Advance.** The top 15 people advance after Phase 1, and the top 6–10 after Phase 2. The highest-ranked candidates needed to keep every category represented by at least 2 people are also advanced, even when that makes the total shortlist larger than the pooled limit. A person who advances stays a candidate in every category where they were a finalist.
-5. **Ties.** A tie across a cut line is flagged. After Phase 2 it is broken by Phase 1 points first, and if still tied the admin decides. After Phase 1 the admin decides.
+5. **Ties.** A tie across a cut line is flagged. After Phase 2 it is broken by Phase 1 points first, and if still tied the admin decides. After Phase 1 the admin decides. One exception, and only after Phase 2: when the committee's ballot left a tie it could not separate — people level in **every** category they share, so the record holds nothing to decide with — the cut orders that block (<code>resolveCutLineTies</code>) instead of blocking the hand-over. A tie the committee did separate, even in one category, is still the admin's to resolve.
 6. **Safety check.** Every category must keep at least 2 candidates. The cut protects the highest-ranked people from each category's top 5 in addition to the pooled limit.
 7. **Save.** Points are stored on each `Candidate` row when the cut is confirmed, so results can't change later.
 
@@ -225,15 +225,24 @@ preseeded company departments → save and sign in. The application welcomes the
 by name after authentication. Later logins need only the phone number and work from any
 browser.
 
+**The department is the only thing an employee is asked at sign-in.** A person's business
+team is staff data: an administrator sets it from `/admin/employees`. It is never collected
+at login, and a missing team never blocks sign-in, nominations or voting — a teamless
+employee can still nominate and be nominated for every person category.
+
 **Rules**
 1. Normalize numbers to `+2547XXXXXXXX` before storing or comparing.
 2. Unknown or inactive accounts cannot sign in.
 3. If an active employee has no department, the login endpoint returns the department
    options without issuing a session. The employee selects one; the server saves it,
    records `DEPARTMENT_ASSIGNED`, and then issues the session.
-4. A department already assigned to an employee cannot be changed through login; an
-   administrator can update it from the employee console.
-5. Login attempts are rate limited (default 10 failed attempts per 15 minutes per IP).
+4. A department is a profile label, so it can be changed at a later sign-in. The change is
+   written to the audit log as `DEPARTMENT_ASSIGNED`, with the previous value. A brand-new
+   account's first choice is recorded as `ONBOARDING_COMPLETED` instead, so the two are
+   distinguishable. An administrator can also set it from the employee console.
+5. A team is never requested at login. The administrator assigns it, and it exists only to
+   make an employee eligible to belong to a Team of the Year nominee.
+6. Login attempts are rate limited (default 10 failed attempts per 15 minutes per IP).
    Only failed attempts count, so staff behind one office IP do not lock each other out.
 
 ```
@@ -247,15 +256,21 @@ POST /api/auth/login { phone, departmentId }
 
 ## 8. Data model (Prisma)
 
-> Departments are used for Team of the Year and as employee profile data; the first-login
-> onboarding lets staff assign the missing department from the preseeded list.
+> **Two lists, two different jobs.**
+> - **Departments** (`DEPARTMENTS`) are a profile label: they identify who a person is when they
+>   sign in. Nothing in scoring, cuts or results reads them. They appear nowhere except the
+>   employee profile, the nominee list and the results table as context.
+> - **Teams** (`TEAMS`) are the *voting* grouping: they are the nominees for **Team of the Year**,
+>   which is voted like every other category. An employee's own team is staff data an
+>   administrator sets; it is never asked for at sign-in and never affects eligibility.
+> No rule, cut, tally or result depends on a person's department.
 
 See `backend/prisma/schema.prisma` for the authoritative version. The models:
 
-- `Department` — company departments and Team of the Year nominees.
-- `Employee` — name, phone, role, `eligible`, `active` and department.
+- `Department` — the staff departments (`DEPARTMENTS`), a profile label only. No voting rule reads it.
+- `Employee` — name, phone, role, `eligible`, `active`, department (profile) and optional team.
 - `Category` — 8 seeded categories, `criteria`, `forTeams`, `sortOrder`.
-- `Nomination` — `categoryId`, `nominatorId`, `nomineeId` **or** `nomineeDeptId`, `justification`, `isSelf`; `@@unique([categoryId, nominatorId])` (one per category, replaceable until Phase 1 closes).
+- `Nomination` — `categoryId`, `nominatorId`, `nomineeId` **or** `nomineeTeamId`, `justification`, `isSelf`; `@@unique([categoryId, nominatorId])` (one per category, replaceable until Phase 1 closes).
 - `Candidate` — one row per category slot: `nominationPoints`, `committeePoints`, `finalPoints`, `inPhase2`, `inPhase3`.
 - `CommitteeVote` — `candidateId`, `memberId`, `categoryId`; `@@unique([candidateId, memberId])` (max `COMMITTEE_PICKS_PER_CATEGORY` per member per category is enforced in code).
 - `Conflict` — `candidateId`, `memberId`, `reason`.
