@@ -1,31 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
-    "app": {
-      "root": ".",
-      "runtime": "container"
-    },
-    "backend": {
-      "root": "backend",
-      "framework": "express"
-    },
-    "frontend": {
-      "root": "frontend",
-      "framework": "nextjs"
-    }
+    "backend":  { "root": "backend",  "framework": "express" },
+    "frontend": { "root": "frontend", "framework": "nextjs" }
   },
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": {
-        "service": "backend"
-      }
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "service": "app"
-      }
-    }
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)",     "destination": { "service": "frontend" } }
   ]
 }
