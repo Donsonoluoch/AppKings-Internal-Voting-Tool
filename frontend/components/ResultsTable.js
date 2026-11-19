@@ -4,6 +4,9 @@ export default function ResultsTable({
   showBreakdown = false,
   scoreKey = 'finalPoints',
   scoreLabel = 'final votes',
+  // A winner is only a winner once that phase has closed; while it is open the same table
+  // shows the running position without crowning anyone.
+  settled = true,
 }) {
   if (!results || results.length === 0) {
     return <p className="text-sm text-slate-600">No results to show yet.</p>;
@@ -17,10 +20,11 @@ export default function ResultsTable({
             <h2 className="text-base font-bold tracking-tight text-slate-900">{category.categoryName}</h2>
             <p className="text-xs text-slate-500">
               {category.results.length} candidate{category.results.length === 1 ? '' : 's'} · points only
+              {!settled && ' · phase still open'}
             </p>
           </div>
 
-          {category.tiebreakRequired && (
+          {settled && category.tiebreakRequired && (
             <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               The top positions are tied after the earlier phases. The admin must decide this one.
             </p>
@@ -28,7 +32,7 @@ export default function ResultsTable({
 
           <div className="space-y-2">
             {category.results.map((row, index) => {
-              const isWinner = row.id === category.winnerId && !category.tiebreakRequired;
+              const isWinner = settled && row.id === category.winnerId && !category.tiebreakRequired;
               const score = row[scoreKey] ?? 0;
               const max = Math.max(1, ...category.results.map((item) => item[scoreKey] ?? 0));
               return (

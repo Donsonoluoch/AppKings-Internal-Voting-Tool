@@ -27,8 +27,9 @@ PostgreSQL. The database is stored in the persistent `appkings-voting_db_data` v
 
 ## Quick start (local, no Docker)
 
-Requires a local PostgreSQL database. For native development, change the sample
-`host.docker.internal` database host to `localhost`. Set `DATABASE_URL` and `JWT_SECRET`
+Requires a local PostgreSQL database. Leave `DATABASE_URL` unset if you run the Docker
+stack instead - it starts its own PostgreSQL (see below). For native development point it at
+your local server (`...@localhost:5432/...`) and set `JWT_SECRET`
 in `.env`. Seeding reads only names and phone numbers from `AppKings Team Data.xlsx` (or
 the path configured with `EMPLOYEE_ROSTER_FILE`).
 
@@ -81,7 +82,8 @@ not acceptable.
 | `npm run prisma:generate` | Generate the Prisma client |
 | `npm run prisma:migrate` | Create/apply a migration locally |
 | `npm run db:deploy` | Apply migrations (deploy) |
-| `npm run db:seed` | Categories, departments, roster names/phones, Steve Martin admin (idempotent) |
+| `npm run db:golive` | New database: migrations, roster seed, then verify lists, accounts and the administrator |
+| `npm run db:seed` | Categories, departments, teams, roster names/phones, Steve Martin admin (idempotent; removes unused extras) |
 | `npm run db:import -- <file.csv> [--apply]` | Phase 3 employee import; dry run unless `--apply` |
 | `npm run db:reset` | Drop, migrate and re-seed |
 | `npm run db:status` | Migration status |
@@ -145,10 +147,21 @@ NOT_STARTED → PHASE_1 (nominations) → PHASE_2 (committee) → PHASE_3 (final
 2. **Phase 2** — the committee makes one pick per category among Phase 2 candidates
    (1 point each), blocked on declared conflicts. The admin confirms the pooled **top 6–10
    people overall** plus any category finalists needed to keep every category represented.
-   Team of the Year advances its top 5 teams, then the top 3.
-3. **Phase 3** — every employee casts one confidential, final vote per category. The
-   candidate with the most points wins; ties go to Phase 2 points, then Phase 1 points, then
-   the admin.
+   Team of the Year advances its top 5 teams after Phase 1, then the top 3 after Phase 2.
+3. **Phase 3** — every employee casts one confidential, final vote per category, choosing
+   only among the candidates the committee forwarded. The candidate with the most points
+   wins; ties go to Phase 2 points, then Phase 1 points, then the admin.
+
+**Each phase hands its own outcome to the next one.** Phase 2 can only pick among the
+confirmed Phase 1 cut (`Candidate.inPhase2`), and the Phase 3 ballot is exactly the
+confirmed Phase 2 cut (`Candidate.inPhase3`). Both transitions re-check the saved cut
+against the live tally and refuse to move if anything changed after confirmation, so what
+moves on is what the organiser confirmed. Advancing after Phase 2 includes the
+category-coverage candidates, and Team of the Year keeps at least two finalists whenever two
+or more teams were nominated, so no category reaches the final vote empty or unopposed.
+
+The nomination, committee-pick and vote screens clear the form after a save and move on to
+the next category that still needs a choice.
 
 Tallies are admin-only and only while a phase is being closed. Points are saved on each
 `Candidate` row when a cut is confirmed, so results cannot change afterwards.

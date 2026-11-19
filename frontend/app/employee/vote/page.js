@@ -13,6 +13,7 @@ function Vote() {
   const { phase } = useAuth();
   const [categories, setCategories] = useState([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
 
   // { [categoryId]: candidateId } for categories not yet voted in
@@ -26,8 +27,10 @@ function Vote() {
     try {
       const data = await get('/shortlist');
       setCategories(data.categories);
+      return data;
     } catch (loadError) {
       setError(loadError.message);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -43,13 +46,26 @@ function Vote() {
     setError('');
     try {
       await post('/votes', { categoryId: confirm.categoryId, candidateId: confirm.candidateId });
+      const voted = confirm;
       setConfirm(null);
+      // Clear the pick for the category just voted in, then bring the next category that
+      // still needs a vote into view — a phone voter should not have to scroll back.
       setSelections((current) => {
         const next = { ...current };
-        delete next[confirm.categoryId];
+        delete next[voted.categoryId];
         return next;
       });
-      await load();
+      const data = await load();
+      const remaining = (data?.categories ?? []).filter(
+        (category) => !category.hasVoted && category.candidates.length > 1
+      );
+      if (remaining.length === 0) {
+        setSuccess('You have voted in every category.');
+      } else {
+        document
+          .getElementById(`vote-category-${remaining[0].id}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     } catch (voteError) {
       setError(voteError.message);
       setConfirm(null);
@@ -100,6 +116,7 @@ function Vote() {
       </section>
 
       <Alert tone="error" className="mb-4">{error}</Alert>
+      <Alert tone="success" className="mb-4">{success}</Alert>
       {loading && <Spinner label="Loading the shortlist…" />}
       {!loading && categories.length === 0 && !error && (
         <Alert tone="warning">No final-vote shortlist is available yet. Please check back when voting opens.</Alert>
@@ -107,7 +124,7 @@ function Vote() {
 
       <div className="space-y-6">
         {categories.map((category) => (
-          <section key={category.id} className="card">
+          <section key={category.id} id={`vote-category-${category.id}`} className="card scroll-mt-24">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-bold text-slate-900">{category.name}</h2>
               {category.hasVoted ? (
@@ -119,6 +136,11 @@ function Vote() {
 
             <fieldset disabled={category.hasVoted || phase !== 'PHASE_3' || busy} className="space-y-2">
               <legend className="sr-only">{category.name}</legend>
+              {category.candidates.length < 2 && !category.hasVoted && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  This category has only one finalist, so there is nothing to choose.
+                </p>
+              )}
               {category.candidates.map((candidate) => {
                 const selected = selections[category.id] === candidate.id;
                 return (
@@ -148,7 +170,7 @@ function Vote() {
               <button
                 type="button"
                 className="btn-primary mt-3 w-full sm:w-auto"
-                disabled={!selections[category.id] || phase !== 'PHASE_3' || busy}
+                disabled={!selections[category.id] || category.candidates.length < 2 || phase !== 'PHASE_3' || busy}
                 onClick={() => {
                   const candidate = category.candidates.find((item) => item.id === selections[category.id]);
                   setConfirm({ categoryId: category.id, candidateId: candidate.id, name: candidate.name, categoryName: category.name });

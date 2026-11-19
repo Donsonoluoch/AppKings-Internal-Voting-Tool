@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AppShell from '@/components/AppShell';
 import Alert from '@/components/Alert';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -14,21 +14,23 @@ function CommitteeVote() {
   const { phase } = useAuth();
   const [categories, setCategories] = useState(null);
   const [myPicks, setMyPicks] = useState({});
+  const [savedPicks, setSavedPicks] = useState({}); // what the server currently holds
   const [maxPicks, setMaxPicks] = useState(1);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const sectionRefs = useRef({});
 
-  const load = () => {
+  const load = () =>
     Promise.all([get('/committee/candidates'), get('/committee/picks')])
       .then(([candidateData, pickData]) => {
         setCategories(candidateData.categories);
         setMyPicks(pickData.picks || {});
+        setSavedPicks(pickData.picks || {});
         setMaxPicks(pickData.picksPerCategory ?? 1);
       })
       .catch((loadError) => setError(loadError.message));
-  };
 
   useEffect(() => {
     if (phase === 'PHASE_2') load();
@@ -46,17 +48,43 @@ function CommitteeVote() {
     });
   };
 
+  const pickFor = (categoryId, candidateId) => {
+    setMyPicks((current) => ({ ...current, [categoryId]: [candidateId] }));
+  };
+
   const submit = async () => {
     setBusy(true);
     setError('');
     setSuccess('');
     try {
+      const saved = confirm;
       await put('/committee/picks', {
-        categoryId: confirm.categoryId,
-        candidateIds: myPicks[confirm.categoryId] || [],
+        categoryId: saved.categoryId,
+        candidateIds: myPicks[saved.categoryId] || [],
       });
-      setSuccess(`Picks saved for ${confirm.name}.`);
+
+      // Drop this category's selection and jump to the next category that still has
+      // nobody picked, so the committee can work straight through the list.
+      setMyPicks((current) => {
+        const next = { ...current };
+        delete next[saved.categoryId];
+        return next;
+      });
+      setSavedPicks((current) => ({ ...current, [saved.categoryId]: myPicks[saved.categoryId] || [] }));
       setConfirm(null);
+      setSuccess(`Picks saved for ${saved.name}.`);
+
+      const pending = (categories || []).filter(
+        (category) =>
+          category.id !== saved.categoryId &&
+          category.candidates.length > 0 &&
+          !(myPicks[category.id] || []).length
+      );
+      if (pending.length === 0) {
+        setSuccess(`Picks saved for ${saved.name}. You have picked in every category.`);
+      } else {
+        sectionRefs.current[pending[0].id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       load();
     } catch (saveError) {
       setError(saveError.message);
@@ -84,14 +112,26 @@ function CommitteeVote() {
       <div className="space-y-5">
         {(categories || []).map((category) => {
           const list = myPicks[category.id] || [];
-          const ready = list.length > 0;
+          const saved = savedPicks[category.id] || [];
+          const dirty = [...list].sort().join() !== [...saved].sort().join();
+          const ready = list.length > 0 && dirty;
           return (
-            <section key={category.id} className="card">
+            <section
+              key={category.id}
+              id={`committee-category-${category.id}`}
+              ref={(node) => {
+                sectionRefs.current[category.id] = node;
+              }}
+              className="card scroll-mt-24"
+            >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-bold text-slate-900">{category.name}</h2>
-                <StatusPill tone={ready ? 'green' : 'amber'}>
-                  {list.length} / {maxPicks} picked
-                </StatusPill>
+                <div className="flex flex-wrap items-center gap-2">
+                  {list.length > 0 && !dirty && <StatusPill tone="green">saved</StatusPill>}
+                  <StatusPill tone={list.length ? 'green' : 'amber'}>
+                    {list.length} / {maxPicks} picked
+                  </StatusPill>
+                </div>
               </div>
               {category.candidates.length === 0 ? (
                 <p className="text-sm text-slate-500">No candidates in this category.</p>
@@ -114,7 +154,7 @@ function CommitteeVote() {
                               disabled={candidate.hasConflict || full || phase !== 'PHASE_2'}
                               onChange={() =>
                                 maxPicks === 1
-                                  ? setMyPicks((current) => ({ ...current, [category.id]: [candidate.id] }))
+                                  ? pickFor(category.id, candidate.id)
                                   : toggle(category.id, candidate.id)
                               }
                             />
@@ -122,6 +162,9 @@ function CommitteeVote() {
                               <span className="font-medium">{candidate.name}</span>
                               {candidate.department && (
                                 <span className="ml-2 text-xs text-slate-500">{candidate.department}</span>
+                              )}
+                              {candidate.kind === 'team' && (
+                                <span className="ml-2 text-xs text-slate-500">Team</span>
                               )}
                             </span>
                           </span>
@@ -147,7 +190,7 @@ function CommitteeVote() {
                 disabled={!ready || busy || phase !== 'PHASE_2'}
                 onClick={() => setConfirm({ categoryId: category.id, name: category.name, count: list.length })}
               >
-                Save picks
+                {saved.length > 0 && !dirty ? 'Picks saved' : 'Save picks'}
               </button>
             </section>
           );

@@ -12,6 +12,9 @@ function presentCandidate(candidate) {
     // same employee shortlisted in two categories has two different ids — which
     // is why the overall ranking listed them twice. Grouping must use this.
     personId: candidate.employeeId ?? candidate.teamId ?? candidate.id,
+    // Team of the Year runs as its own track (context §1 #6): its winner answers a question
+    // about a team, so it is excluded from the people's overall title.
+    forTeams: Boolean(candidate.category?.forTeams),
     name: candidate.employee ? candidate.employee.fullName : candidate.team?.name,
     kind: candidate.employee ? 'employee' : 'team',
     department: candidate.employee?.department?.name ?? null,
@@ -32,6 +35,7 @@ async function computeResults(client = prisma) {
     client.candidate.findMany({
       where: { inPhase3: true },
       include: {
+        category: { select: { forTeams: true } },
         employee: { select: { id: true, fullName: true, department: { select: { name: true } } } },
         team: { select: { id: true, name: true } },
       },
@@ -56,9 +60,11 @@ async function computeResults(client = prisma) {
     })
     .filter((category) => category.results.length > 0);
 
-  // The single overall winner, across every category. Attached to the array so
+  // The single overall winner, across every people category. Attached to the array so
   // existing callers that iterate categories are unaffected.
-  const allRows = results.flatMap((category) => category.results);
+  const allRows = results
+    .filter((category) => !category.forTeams)
+    .flatMap((category) => category.results);
   const overall = overallChampion(allRows);
   Object.defineProperty(results, 'overall', {
     value: {
@@ -68,6 +74,9 @@ async function computeResults(client = prisma) {
     },
     enumerable: true,
   });
+
+  // The people's champion is never a team (context §1 #6). `overallChampion` already skips
+  // teams, so `overall.rows` is the people-only ranking.
 
   return results;
 }

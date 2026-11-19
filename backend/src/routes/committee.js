@@ -5,6 +5,7 @@ const config = require('../config');
 const prisma = require('../lib/prisma');
 const { errors } = require('../lib/errors');
 const { audit, ACTIONS } = require('../lib/audit');
+const { requireAuth } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { requireRole } = require('../middleware/role');
 const { requirePhase } = require('../middleware/phase');
@@ -12,7 +13,11 @@ const { clientIp } = require('../middleware/audit');
 const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
-router.use(requireRole('COMMITTEE'));
+// Every route below needs a signed-in account. The two writes — a pick and a conflict
+// declaration — also require the committee role, so an employee is refused with 403 no
+// matter the phase. Reads are shared: `presentCandidate` exposes only the caller's own pick,
+// and app.js mounts the employee router first, so no employee-portal path is shadowed here.
+router.use(requireAuth);
 
 const categorySelect = { id: true, name: true, criteria: true, forTeams: true, sortOrder: true };
 
@@ -38,12 +43,23 @@ function presentCandidate(candidate, memberId) {
   return {
     id: candidate.id,
     categoryId: candidate.categoryId,
+    // The candidate page reads `candidate.category.name` and `candidate.category.criteria`.
+    category: candidate.category
+      ? { id: candidate.category.id, name: candidate.category.name, criteria: candidate.category.criteria }
+      : { id: candidate.categoryId, name: '', criteria: '' },
     name: candidate.employee ? candidate.employee.fullName : candidate.team?.name,
+    // The person (or team) behind the row. `id` is the CANDIDATE row, so a name alone
+    // cannot tell two people apart — but `employeeId` / `teamId` always can.
+    employeeId: candidate.employeeId ?? null,
+    teamId: candidate.teamId ?? null,
     kind: candidate.employee ? 'employee' : 'team',
     department: candidate.employee?.department?.name ?? null,
     eligible: candidate.employee ? candidate.employee.eligible && candidate.employee.active : true,
     nominationPoints: candidate.nominationPoints,
     inPhase2: candidate.inPhase2,
+    // Which round the row has reached. The committee judges in Phase 2 and the final ballot is
+    // the Phase 3 cut, so a client that wants "is this row on the final ballot" reads this.
+    inPhase3: candidate.inPhase3,
     inPhase3: candidate.inPhase3,
     // Only the member's own pick is ever exposed — never other members' picks or tallies.
     myPick: picks.some((pick) => pick.memberId === memberId),
@@ -146,6 +162,11 @@ router.get(
       include: candidateInclude,
     });
     if (!candidate) throw errors.notFound('Candidate not found.');
+    // Phase 2 candidates are the confirmed Phase 1 cut, plus the committee's own top picks
+    // from the Phase 2 cut. Anything else is not part of the round being judged.
+    if (!candidate.inPhase2 && !(candidate.inPhase3 && candidate.committeePoints > 0)) {
+      throw errors.notFound('Candidate not found.');
+    }
 
     const nominations = await prisma.nomination.findMany({
       where: {
@@ -180,6 +201,7 @@ const picksSchema = z.object({
 // member's previous picks for that category.
 router.put(
   '/picks',
+  requireRole('COMMITTEE'),
   requirePhase('PHASE_2'),
   validate(picksSchema),
   asyncHandler(async (req, res) => {
@@ -260,6 +282,7 @@ const conflictSchema = z.object({
 // POST /api/committee/conflicts — declaring a conflict also removes any pick already made.
 router.post(
   '/conflicts',
+  requireRole('COMMITTEE'),
   requirePhase('PHASE_2'),
   validate(conflictSchema),
   asyncHandler(async (req, res) => {

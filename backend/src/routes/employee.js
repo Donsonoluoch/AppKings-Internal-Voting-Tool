@@ -1,5 +1,6 @@
 const express = require('express');
 const { z } = require('zod');
+const { TEAMS, PHASES } = require('@appkings/shared');
 
 const config = require('../config');
 const prisma = require('../lib/prisma');
@@ -45,7 +46,12 @@ router.get(
           department: { select: { name: true } },
         },
       }),
-      prisma.team.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+      // Team of the Year nominees are the configured teams only (TEAMS), never a legacy row.
+      prisma.team.findMany({
+        where: { code: { not: null } },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true },
+      }),
     ]);
 
     res.json({
@@ -131,9 +137,14 @@ router.put(
       if (!nominee.eligible) throw errors.validation('That employee is not eligible to be nominated.');
       if (!nominee.active) throw errors.validation('That employee is not active.');
     }
+    // Team of the Year nominees must be one of the teams defined in the shared constants
+    // (seeded from TEAMS); an ad-hoc department is not a valid nominee.
     if (nomineeTeamId) {
       const team = await prisma.team.findUnique({ where: { id: nomineeTeamId } });
       if (!team) throw errors.notFound('Team not found.');
+      if (!TEAMS.includes(team.name)) {
+        throw errors.validation('That team is not one of the award teams.');
+      }
     }
 
     const isSelf = Boolean(nomineeId) && nomineeId === req.user.id;
@@ -239,6 +250,8 @@ router.get(
     const [categories, candidates, receipts] = await Promise.all([
       prisma.category.findMany({ orderBy: { sortOrder: 'asc' }, select: categorySelect }),
       prisma.candidate.findMany({
+        // The final ballot is exactly the Phase 2 cut: the committee's picks. Candidates
+        // that only reached Phase 2 are never shown here.
         where: { inPhase3: true },
         include: {
           employee: {
@@ -288,6 +301,12 @@ router.post(
     const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
     if (!candidate || candidate.categoryId !== categoryId || !candidate.inPhase3) {
       throw errors.validation('That candidate is not on the shortlist for this category.');
+    }
+    // A category only opens voting when the committee forwarded at least two candidates.
+    // An empty ballot would hand the category to whoever is listed.
+    const onBallot = await prisma.candidate.count({ where: { categoryId, inPhase3: true } });
+    if (onBallot < 2) {
+      throw errors.phaseClosed('This category has no confirmed finalists yet.');
     }
 
     await prisma.$transaction(async (tx) => {
@@ -344,22 +363,34 @@ router.get(
       phase2: req.settings?.phase2ResultsPublic ?? false,
       phase3: req.settings?.resultsPublic ?? false,
     };
+    // Each tally is final only once its phase has closed. Nominations stay open through
+    // Phase 1 and committee picks through Phase 2, so those counts are not results yet — and
+    // the Phase 3 tally only exists after voting closes.
+    const closed = {
+      phase1: PHASES.indexOf(req.phase) > PHASES.indexOf('PHASE_1'),
+      phase2: PHASES.indexOf(req.phase) > PHASES.indexOf('PHASE_2'),
+      phase3: ['CLOSED', 'PUBLISHED'].includes(req.phase),
+    };
+    const showing = {
+      phase1: closed.phase1 && (isAdmin || publications.phase1),
+      phase2: closed.phase2 && (isAdmin || publications.phase2),
+      phase3: closed.phase3 && (isAdmin || publications.phase3),
+    };
     const [phase1, phase2, finalResults] = await Promise.all([
-      isAdmin || publications.phase1 ? computePhase1Tally() : null,
-      isAdmin || publications.phase2 ? computePhase2Tally() : null,
-      isAdmin || publications.phase3 ? computeResults() : null,
+      showing.phase1 ? computePhase1Tally() : null,
+      showing.phase2 ? computePhase2Tally() : null,
+      showing.phase3 ? computeResults() : null,
     ]);
-    const results = publications.phase3 || isAdmin ? finalResults : null;
+    const results = showing.phase3 ? finalResults : null;
     res.json({
       published: publications.phase3,
       publications,
+      // Which phases have a final tally yet, so the UI can say "not closed" instead of
+      // "no results" for a phase that is still running.
+      settled: closed,
       phaseResults: {
-        phase1: phase1 && (isAdmin || publications.phase1)
-          ? presentPhaseResults(phase1, 'PHASE_1')
-          : null,
-        phase2: phase2 && (isAdmin || publications.phase2)
-          ? presentPhaseResults(phase2, 'PHASE_2')
-          : null,
+        phase1: phase1 ? presentPhaseResults(phase1, 'PHASE_1') : null,
+        phase2: phase2 ? presentPhaseResults(phase2, 'PHASE_2') : null,
       },
       results: results ?? [],
       // The single overall winner across every category.

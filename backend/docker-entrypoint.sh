@@ -14,6 +14,13 @@ EMBEDDED_POSTGRES="${EMBEDDED_POSTGRES:-false}"
 PGDATA="${PGDATA:-/var/lib/postgresql/data}"
 PG_BIN="${PG_BIN:-/usr/libexec/postgresql16}"
 
+# An external DATABASE_URL (a managed/served PostgreSQL) replaces the embedded one: nothing
+# here has to start a database, and POSTGRES_* is then irrelevant.
+if [ -n "${DATABASE_URL:-}" ]; then
+  EMBEDDED_POSTGRES="false"
+export EMBEDDED_POSTGRES
+fi
+
 stop_embedded_postgres() {
   if su-exec postgres "$PG_BIN/pg_ctl" --pgdata="$PGDATA" status >/dev/null 2>&1; then
     if ! su-exec postgres "$PG_BIN/pg_ctl" --pgdata="$PGDATA" --mode=fast --wait stop; then

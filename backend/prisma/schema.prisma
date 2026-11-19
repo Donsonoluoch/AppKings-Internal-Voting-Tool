@@ -1,12 +1,12 @@
 // AppKings Solutions — 2026 Employee Awards Voting System
 // Points only: one pick per category, 1 point each, no percentages (§1, §6).
 //
-// Two groupings (§8):
+// Two groupings, with two different jobs:
 //   * Department — a staff department (Technical, Operations, Finance, HR/Admin, Marketing).
-//     Every employee belongs to one; it is picked at first sign-in and shown on profiles.
-//   * Team — a business team (Academics, Parastals, Private, Portals, Marketing, Collection,
-//     Hospitality). Team exists only to support Team of the Year, where the nominee is a
-//     team rather than a person.
+//     A profile label only: it identifies who a person is when they sign in. No voting rule
+//     reads it.
+//   * Team — a business team (Academics, Parastatals, Private, Portals, Marketing, Collection,
+//     Hospitality). These are the Team of the Year nominees, voted like every other category.
 
 generator client {
   provider = "prisma-client-js"
@@ -41,6 +41,11 @@ model Department {
 model Team {
   id          String       @id @default(cuid())
   name        String       @unique
+  // Stable key from TEAMS in packages/shared/constants.js (e.g. "support"). Required for
+  // configured teams; legacy rows written by an earlier import have no code — they are
+  // retired, with their name kept in nameKept.
+  code        String?      @unique
+  nameKept    String?
   employees   Employee[]
   nominations Nomination[]
   candidates  Candidate[]

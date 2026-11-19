@@ -25,6 +25,19 @@ Browser ──▶ :3000 Next.js ──/api/*──▶ api:4000 Express ──▶
   database volume is mounted into the API container across rebuilds.
 - Set `COOKIE_SECURE=true` and put the app behind HTTPS. Production refuses to start
   with an insecure session cookie or a default/short JWT secret.
+- `BOOTSTRAP_ADMIN_PHONE` set to the person who will be the first admin. There is no default
+  account: sign-in is by registered phone number only.
+
+## 0b. Choosing the database
+
+| Shape | `.env` | Behaviour |
+|-------|--------|-----------|
+| **External PostgreSQL** (managed/served; recommended for go-live) | `DATABASE_URL=postgresql://…` and no `POSTGRES_PASSWORD` | The API starts no database of its own, runs `prisma migrate deploy` against that URL, and leaves the `db_data` volume unused. |
+| **Embedded PostgreSQL** (default, single host) | leave `DATABASE_URL=` empty and set `POSTGRES_PASSWORD` | The API runs PostgreSQL 16 inside its own container, backed by the `appkings-voting_db_data` volume. |
+
+Migrations run at container start, so run exactly one API container per database. A new,
+empty external database needs nothing in advance: `prisma migrate deploy` creates every table
+on first start.
 
 ## 1. Run the two app containers
 
@@ -38,17 +51,23 @@ docker compose --env-file .env -f infra/docker-compose.yml up -d --build
 
 or the npm alias: `npm run docker:up`.
 
-Production does not seed on container start. The initial seed imports only names and phone
-numbers from the roster workbook, creates the categories and 14 company departments, and
-sets Steve Martin at `BOOTSTRAP_ADMIN_PHONE` (default `+254706831847`) as the Finance admin.
-Other roster accounts start as employees with no department; they choose one at first login.
-The workbook is excluded from Docker images, so copy it into the running API container only
-for the one-time seed:
+Production does not seed on container start. The one-time seed imports only names and phone
+numbers from the roster workbook, creates the 8 categories, the 5 departments and the 7 teams
+from `packages/shared/constants.js`, and sets Steve Martin at `BOOTSTRAP_ADMIN_PHONE` as the
+Finance admin. Every other account starts with no department and chooses one at first sign-in.
+The workbook is excluded from Docker images, so the seed copies it into the running API
+container itself:
 
 ```bash
-docker compose --env-file .env -f infra/docker-compose.yml cp "AppKings Team Data.xlsx" api:/tmp/appkings-roster.xlsx
-docker compose --env-file .env -f infra/docker-compose.yml exec -e EMPLOYEE_ROSTER_FILE=/tmp/appkings-roster.xlsx api node prisma/seed.js
+npm run db:golive              # copies the workbook in, seeds, then verifies
+npm run db:golive -- --dry-run # what would happen; changes nothing
 ```
+
+`db:golive` refuses to run against a database that already has employees (use
+`/admin` → *Reset voting progress* to restart an existing cycle), then checks the result:
+roster count, exactly one admin in Finance, 8 categories, departments and teams exactly as
+defined in the shared constants, cycle at `NOT_STARTED`, and only the admin with a department.
+Set `EMPLOYEE_ROSTER_FILE` if the workbook is not at the repository root.
 
 The workbook contains 58 data rows; the seed skips the duplicate phone and uses the
 configured admin profile for Steve's matching roster number, resulting in 57 accounts.
@@ -116,15 +135,15 @@ only when the development database is empty, and is not recreated on restart.
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `JWT_SECRET` | required in production | Unique session signing key, at least 32 characters |
-| `POSTGRES_USER` | `appkings` | PostgreSQL account inside the API container |
-| `POSTGRES_PASSWORD` | required in production | Strong, URL-safe PostgreSQL password |
-| `POSTGRES_DB` | `appkings_voting` | Database created in the API container |
-| `DATABASE_URL` | native development only | Local development connection string; Docker builds the internal URL |
+| `DATABASE_URL` | empty = embedded PostgreSQL | External database. When set, the embedded database is skipped; leave `POSTGRES_PASSWORD` empty. |
+| `POSTGRES_USER` | `appkings` | PostgreSQL account inside the API container (embedded only) |
+| `POSTGRES_PASSWORD` | required for embedded | Strong, URL-safe PostgreSQL password (not needed with `DATABASE_URL`) |
+| `POSTGRES_DB` | `appkings_voting` | Database created in the API container (embedded only) |
 | `WEB_PORT` | 3000 | Published web port |
 | `API_INTERNAL_URL` | `http://api:4000/api` | Where the web app proxies `/api/*` |
 | `FRONTEND_URL` | `http://localhost:3000` | Allowed CORS origin |
 | `COOKIE_SECURE` | `true` | Required for production HTTPS |
-| `RUN_SEED` | `false` | Production does not seed on container start |
+| `RUN_SEED` | `false` | Production does not seed on container start; use `npm run db:golive` |
 | `BOOTSTRAP_ADMIN_PHONE` | `+254706831847` | Phone number for the initial admin (Steve Martin) |
 | `BOOTSTRAP_ADMIN_NAME` | `Steve Martin` | Name for the initial admin |
 | `EMPLOYEE_ROSTER_FILE` | workbook path | Path to the roster workbook when running the seed |
@@ -133,7 +152,9 @@ only when the development database is empty, and is not recreated on restart.
 
 ## 5. Backups
 
-Back up the database from the API container. The database is not published to the host:
+Back up the database from the API container. The embedded database is not published to the
+host; with an external `DATABASE_URL`, use your provider's snapshot tooling and this command
+for a portable copy (it reads the connection string the container already has).
 
 **Take one:**
 

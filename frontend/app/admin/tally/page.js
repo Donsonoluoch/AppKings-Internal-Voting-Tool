@@ -82,7 +82,10 @@ function Tally() {
   const tally = data?.tally;
   const problems = data?.problems || [];
   const isPhase1 = tally?.phase === 'PHASE_1';
-  const peopleCut = isPhase1 ? rules?.phase1Finalists ?? 15 : rules?.phase2FinalistsMax ?? 10;
+  // The API reports the cut it will actually save (the pooled limit, raised to the 6–10
+  // shortlist minimum after Phase 2). Falling back keeps the page usable while loading.
+  const peopleCut = data?.recommended ?? (isPhase1 ? rules?.phase1Finalists ?? 15 : rules?.phase2FinalistsMax ?? 10);
+  const teamCut = tally?.limits?.teamFinalists ?? rules?.teamFinalists ?? 3;
 
   return (
     <AppShell
@@ -109,8 +112,9 @@ function Tally() {
                   {isPhase1 ? 'Phase 1 — top 5 per category, then the top 15 people' : 'Phase 2 — top 6–10 people'}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Every category keeps at least {rules?.minCandidatesPerCategory ?? 2} candidates. A tie across a cut
-                  line is never resolved automatically.
+                  {isPhase1 ? `The top ${peopleCut} people` : `Between ${rules?.phase2FinalistsMin ?? 6} and ${peopleCut} people`} advance, plus any category finalists needed
+                  to keep every category at {rules?.minCandidatesPerCategory ?? 2} candidates or more. A tie across
+                  a cut line is never resolved automatically.
                 </p>
               </div>
               <button type="button" className="btn-primary" onClick={() => setConfirm(true)} disabled={busy}>
@@ -135,6 +139,7 @@ function Tally() {
             <p className="mb-2 text-xs text-slate-500">
               Each person&apos;s total is the sum of their points across the categories where they made the top 5.
               The pooled limit advances, with extra category finalists added when needed to preserve each category&apos;s minimum.
+              {!isPhase1 && ' Ties are broken by Phase 1 points first.'}
             </p>
             <Ranking rows={tally.people} cut={peopleCut} label="cut line" />
             {tally.peopleTiedAtCutoff && (
@@ -144,10 +149,18 @@ function Tally() {
             )}
           </section>
 
-          {!isPhase1 && tally.teams?.length > 0 && (
+          {tally.teams?.length > 0 && (
             <section className="card mb-4">
               <h2 className="mb-2 text-base font-semibold">Team of the Year</h2>
-              <Ranking rows={tally.teams} cut={rules?.teamFinalists ?? 3} label="cut line" />
+              <p className="mb-2 text-xs text-slate-500">
+                Teams run on their own track and never enter the people ranking. The top {teamCut} advance.
+              </p>
+              <Ranking rows={tally.teams} cut={teamCut} label="cut line" />
+              {tally.teamsTiedAtCutoff && (
+                <p className="mt-2 text-xs font-semibold text-amber-800">
+                  A tie sits on the team cut line — you decide which teams advance.
+                </p>
+              )}
             </section>
           )}
 

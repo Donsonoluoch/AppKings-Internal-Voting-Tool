@@ -33,3 +33,5 @@ yarn-error.log*
 *.log
 
 *.xlsx
+# Local database dumps (never committed)
+backups/

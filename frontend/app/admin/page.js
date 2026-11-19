@@ -191,9 +191,9 @@ function AdminHome() {
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="table-head py-3 pr-3">Category</th>
               <th className="table-head py-3 pr-3">Candidates</th>
-              <th className="table-head py-3 pr-3">Phase 2 (top {data.rules.phase1Finalists} + coverage)</th>
+              <th className="table-head py-3 pr-3">Phase 2 (top {data.rules.phase1Finalists}{data.categories.some((category) => category.forTeams) ? ' people, top 3 teams' : ''} + coverage)</th>
               <th className="table-head py-3 pr-3">
-                Shortlist ({data.rules.phase2FinalistsMin}–{data.rules.phase2FinalistsMax} + coverage)
+                Shortlist ({data.rules.phase2FinalistsMin}–{data.rules.phase2FinalistsMax}{data.categories.some((category) => category.forTeams) ? ' people, 3 teams' : ''} + coverage)
               </th>
               <th className="table-head py-3 pr-3">Voted</th>
             </tr>
@@ -208,7 +208,9 @@ function AdminHome() {
                   </StatusPill>
                 </td>
                 <td className="py-3 pr-3">
-                  <StatusPill tone={category.inPhase2 ? 'green' : 'slate'}>{category.inPhase2}</StatusPill>
+                  <StatusPill tone={category.inPhase2 >= data.rules.minCandidatesPerCategory ? 'green' : category.inPhase2 ? 'amber' : 'slate'}>
+                    {category.inPhase2}
+                  </StatusPill>
                 </td>
                 <td className="py-3 pr-3">
                   <StatusPill

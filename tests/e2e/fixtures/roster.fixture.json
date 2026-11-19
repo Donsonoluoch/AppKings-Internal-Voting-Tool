@@ -1,0 +1,238 @@
+{
+  "note": "The 58 seeded accounts, captured from the real roster workbook. Used by the e2e stack when the workbook is not on this machine. Do not edit by hand.",
+  "source": "backend/prisma/seed.js",
+  "roster": [
+    {
+      "fullName": "Scovia Adhiambo",
+      "phone": "+254110135732"
+    },
+    {
+      "fullName": "Joseph Nderitu",
+      "phone": "+254110423886"
+    },
+    {
+      "fullName": "Evans Odoro",
+      "phone": "+254110488210"
+    },
+    {
+      "fullName": "Paul Ochieng",
+      "phone": "+254143140837"
+    },
+    {
+      "fullName": "Reinhard Job",
+      "phone": "+254700949997"
+    },
+    {
+      "fullName": "Jeremiah Otieno",
+      "phone": "+254702186910"
+    },
+    {
+      "fullName": "Jefferson Mokaya",
+      "phone": "+254703824326"
+    },
+    {
+      "fullName": "Tom Wanjala",
+      "phone": "+254704121064"
+    },
+    {
+      "fullName": "Martin Muruingi",
+      "phone": "+254704536696"
+    },
+    {
+      "fullName": "Wesdon Mwiti",
+      "phone": "+254705007835"
+    },
+    {
+      "fullName": "David Muema",
+      "phone": "+254705265017"
+    },
+    {
+      "fullName": "Mutua Sebastian",
+      "phone": "+254706054017"
+    },
+    {
+      "fullName": "Victor Munene",
+      "phone": "+254706134493"
+    },
+    {
+      "fullName": "Steve Martin",
+      "phone": "+254706831847"
+    },
+    {
+      "fullName": "Simon Kipkorir",
+      "phone": "+254707173293"
+    },
+    {
+      "fullName": "Gideon Simon",
+      "phone": "+254707455652"
+    },
+    {
+      "fullName": "Mercy Jepkorir",
+      "phone": "+254707460835"
+    },
+    {
+      "fullName": "Felix Odhiambo",
+      "phone": "+254707755463"
+    },
+    {
+      "fullName": "Ednah Teresa Mokobi",
+      "phone": "+254708601221"
+    },
+    {
+      "fullName": "Arnold Yego",
+      "phone": "+254710717750"
+    },
+    {
+      "fullName": "Tobias Wambua",
+      "phone": "+254712774206"
+    },
+    {
+      "fullName": "Simon Okoth",
+      "phone": "+254712957664"
+    },
+    {
+      "fullName": "Benjamin Ndiku",
+      "phone": "+254715255393"
+    },
+    {
+      "fullName": "Frankline Rono",
+      "phone": "+254715349730"
+    },
+    {
+      "fullName": "Betty Mokeira",
+      "phone": "+254715813000"
+    },
+    {
+      "fullName": "Donson Omondi",
+      "phone": "+254716750221"
+    },
+    {
+      "fullName": "Jenipher Akinyi",
+      "phone": "+254717639683"
+    },
+    {
+      "fullName": "Joshua Oranga",
+      "phone": "+254717805428"
+    },
+    {
+      "fullName": "Victor Okinyi",
+      "phone": "+254719161925"
+    },
+    {
+      "fullName": "Felix Gecheo",
+      "phone": "+254720073055"
+    },
+    {
+      "fullName": "Clarence Banda",
+      "phone": "+254720423507"
+    },
+    {
+      "fullName": "Judy Naitore",
+      "phone": "+254722831868"
+    },
+    {
+      "fullName": "Bernard Onyango",
+      "phone": "+254722987976"
+    },
+    {
+      "fullName": "Sophieh Mukiri",
+      "phone": "+254724035870"
+    },
+    {
+      "fullName": "Nyakora Kephason",
+      "phone": "+254725162059"
+    },
+    {
+      "fullName": "John Walter Munene",
+      "phone": "+254726723013"
+    },
+    {
+      "fullName": "Kennedy Kirui",
+      "phone": "+254727027512"
+    },
+    {
+      "fullName": "Janet Nduku",
+      "phone": "+254728834481"
+    },
+    {
+      "fullName": "Nixon Madara",
+      "phone": "+254729091792"
+    },
+    {
+      "fullName": "Michael Gituuro",
+      "phone": "+254729958021"
+    },
+    {
+      "fullName": "Simon Masida",
+      "phone": "+254740905094"
+    },
+    {
+      "fullName": "Eva Kabui",
+      "phone": "+254741366690"
+    },
+    {
+      "fullName": "Grace Were",
+      "phone": "+254742302002"
+    },
+    {
+      "fullName": "Fredrick Gitau",
+      "phone": "+254746014237"
+    },
+    {
+      "fullName": "Peacemark Kipkorir",
+      "phone": "+254746476784"
+    },
+    {
+      "fullName": "Mutua Francis",
+      "phone": "+254746886654"
+    },
+    {
+      "fullName": "Grace Mwaura",
+      "phone": "+254757045959"
+    },
+    {
+      "fullName": "Ann Ruguru",
+      "phone": "+254759955343"
+    },
+    {
+      "fullName": "Tonny Odhiambo",
+      "phone": "+254790409081"
+    },
+    {
+      "fullName": "Boniface Kang'ang'i",
+      "phone": "+254792531105"
+    },
+    {
+      "fullName": "Amos Owino",
+      "phone": "+254794338011"
+    },
+    {
+      "fullName": "Frank Mombo",
+      "phone": "+254795223487"
+    },
+    {
+      "fullName": "Purity Wandondi",
+      "phone": "+254796315376"
+    },
+    {
+      "fullName": "Jeffer Kibuti",
+      "phone": "+254797874035"
+    },
+    {
+      "fullName": "Hellen Achieng",
+      "phone": "+254797982193"
+    },
+    {
+      "fullName": "Jilvian Akoth",
+      "phone": "+254798506628"
+    },
+    {
+      "fullName": "Douglas Wamwiri",
+      "phone": "+254798782288"
+    },
+    {
+      "fullName": "Brian Otuka",
+      "phone": "+254799680252"
+    }
+  ]
+}

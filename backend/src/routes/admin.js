@@ -1,7 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { Role, Phase } = require('@prisma/client');
-const { canMoveTo, PHASE_META, PHASES } = require('@appkings/shared');
+const { canMoveTo, PHASE_META, PHASES, DEPARTMENTS, TEAMS, TEAM_DEFINITIONS } = require('@appkings/shared');
 
 const config = require('../config');
 const prisma = require('../lib/prisma');
@@ -9,6 +9,7 @@ const { errors } = require('../lib/errors');
 const { audit, ACTIONS } = require('../lib/audit');
 const { normalizePhone } = require('../lib/phone');
 const { parseCsv } = require('../lib/csv');
+const { pruneTaxonomy } = require('../lib/taxonomy');
 const { computeResults } = require('../lib/scoring');
 const {
   computePhase1Tally,
@@ -16,6 +17,9 @@ const {
   presentPhaseResults,
   cutProblems,
   applyCut,
+  peopleAdvanceLimit,
+  selectAdvancingPeople,
+  advancingRecommendation,
 } = require('../lib/tally');
 const { validate } = require('../middleware/validate');
 const { requireRole } = require('../middleware/role');
@@ -41,12 +45,17 @@ async function buildReadiness(phase, categories) {
   const blocked = [];
 
   if (phase === 'PHASE_1' && next === 'PHASE_2') {
-    const confirmed = await prisma.candidate.count({ where: { inPhase2: true } });
-    if (confirmed === 0) {
+    const tally = await computePhase1Tally();
+    const confirmed = await standingCut('PHASE_1', tally, config.rules.phase1Finalists);
+    if (confirmed.count === 0) {
       steps.push({ ok: false, label: 'Confirm the Phase 1 cut (top 5 per category, top 15 overall)' });
+    } else if (confirmed.drifted > 0) {
+      const label = `The Phase 1 cut no longer matches the tally (${confirmed.drifted} candidate(s) differ) — review the tally and confirm it again`;
+      steps.push({ ok: false, label });
+      blocked.push(label);
     } else {
-      steps.push({ ok: true, label: `Phase 1 cut confirmed for ${confirmed} candidate(s)` });
-      const problems = cutProblems(await computePhase1Tally(), { includeTies: false });
+      steps.push({ ok: true, label: `Phase 1 cut confirmed for ${confirmed.count} candidate(s)` });
+      const problems = cutProblems(tally, { includeTies: false });
       for (const problem of problems) {
         steps.push({ ok: false, label: problem });
         blocked.push(problem);
@@ -56,12 +65,17 @@ async function buildReadiness(phase, categories) {
   }
 
   if (phase === 'PHASE_2' && next === 'PHASE_3') {
-    const confirmed = await prisma.candidate.count({ where: { inPhase3: true } });
-    if (confirmed === 0) {
+    const tally = await computePhase2Tally();
+    const confirmed = await standingCut('PHASE_2', tally, config.rules.phase2FinalistsMax);
+    if (confirmed.count === 0) {
       steps.push({ ok: false, label: 'Confirm the Phase 2 cut (top 6\u201310 overall)' });
+    } else if (confirmed.drifted > 0) {
+      const label = `The Phase 2 cut no longer matches the tally (${confirmed.drifted} candidate(s) differ) — review the tally and confirm it again`;
+      steps.push({ ok: false, label });
+      blocked.push(label);
     } else {
-      steps.push({ ok: true, label: `Phase 2 cut confirmed for ${confirmed} candidate(s)` });
-      const problems = cutProblems(await computePhase2Tally(), { includeTies: false });
+      steps.push({ ok: true, label: `Phase 2 cut confirmed for ${confirmed.count} candidate(s)` });
+      const problems = cutProblems(tally, { includeTies: false });
       for (const problem of problems) {
         steps.push({ ok: false, label: problem });
         blocked.push(problem);
@@ -70,11 +84,21 @@ async function buildReadiness(phase, categories) {
     }
   }
 
-  if (phase === 'PHASE_3' && next === 'CLOSED') {
-    const votes = await prisma.vote.count();
+  if (phase === 'PHASE_2' && next === 'PHASE_3') {
     steps.push({
       ok: true,
-      label: `Closing saves the final points from ${votes} vote(s). Each phase's results can be published after it closes.`,
+      label: 'Team of the Year advances its own top teams to the final vote (skipped when no teams were nominated)',
+    });
+  }
+
+  if (phase === 'PHASE_3' && next === 'CLOSED') {
+    const [votes, shortlist] = await Promise.all([
+      prisma.vote.count(),
+      prisma.candidate.count({ where: { inPhase3: true } }),
+    ]);
+    steps.push({
+      ok: true,
+      label: `Closing saves the final points from ${votes} vote(s) across ${shortlist} finalist(s). Each phase's results can be published after it closes.`,
     });
   }
 
@@ -91,6 +115,52 @@ async function buildReadiness(phase, categories) {
   };
 }
 // ---------------------------------------------------------------- dashboard
+
+/**
+ * The employees and teams this tally says should carry forward, keyed by employee/team id.
+ */
+function recommendationKeys(tally, limit) {
+  const advancing = selectAdvancingPeople(tally, peopleAdvanceLimit(tally, limit));
+  const advancingTeams = new Set((tally.teams || []).filter((team) => team.advances).map((team) => team.teamId));
+  const expected = new Map();
+  for (const row of tally.people) {
+    expected.set(row.id, advancing.has(row.id));
+  }
+  for (const row of tally.teams || []) {
+    expected.set(row.teamId, advancingTeams.has(row.teamId));
+  }
+  return expected;
+}
+
+/**
+ * Confirms the SAVED cut still matches the live tally, so what was confirmed is exactly what
+ * the next phase receives.
+ *
+ * `count` is how many rows carry forward; `drifted` counts rows where the saved flag and the
+ * tally disagree (including rows still flagged from the previous phase, which would show up
+ * in the wrong round). A non-zero `drifted` means the cut must be confirmed again.
+ */
+async function standingCut(phase, tally, limit) {
+  const expected = recommendationKeys(tally, limit);
+  const field = phase === 'PHASE_1' ? 'inPhase2' : 'inPhase3';
+  const saved = await prisma.candidate.findMany({
+    where: phase === 'PHASE_1' ? {} : { inPhase2: true },
+    select: { employeeId: true, teamId: true, inPhase2: true, inPhase3: true },
+  });
+  // A Phase 2 cut is confirmed on the Phase 2 shortlist only. A row left over from Phase 1
+  // that never reached Phase 2 is not part of this round and cannot have drifted from it.
+  const count = saved.filter((row) => row[field]).length;
+
+  const savedByKey = new Map(saved.map((row) => [row.employeeId || row.teamId, row]));
+  let drifted = 0;
+  for (const [id, advances] of expected) {
+    if (Boolean(savedByKey.get(id)?.[field]) !== advances) drifted += 1;
+  }
+  for (const [id, row] of savedByKey) {
+    if (row[field] && !expected.has(id)) drifted += 1;
+  }
+  return { count, drifted };
+}
 
 router.get(
   '/dashboard',
@@ -122,6 +192,7 @@ router.get(
       categories: categories.map((category) => ({
         id: category.id,
         name: category.name,
+        forTeams: category.forTeams,
         candidates: candidateCounts.get(category.id) || 0,
         inPhase2: phase2Counts.get(category.id) || 0,
         inPhase3: phase3Counts.get(category.id) || 0,
@@ -141,8 +212,13 @@ router.get(
 
 const employeeInclude = {
   department: { select: { id: true, name: true } },
-  team: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true, code: true } },
 };
+
+const teamIdOf = (employee) => (employee.team?.code ? employee.teamId : null);
+
+// A configured team is any row that came from TEAM_DEFINITIONS (it has a code).
+const configuredTeam = (team) => Boolean(team?.code);
 
 function presentEmployee(employee) {
   return {
@@ -155,7 +231,10 @@ function presentEmployee(employee) {
     department: employee.department?.name ?? null,
     departmentId: employee.departmentId,
     team: employee.team?.name ?? null,
-    teamId: employee.teamId,
+    teamId: teamIdOf(employee),
+    // Retired legacy rows are history, not choices: the admin console offers only configured
+    // teams, so a stale id must not be presented as if it were still valid.
+    teamRetired: Boolean(employee.team && !employee.team.code),
   };
 }
 
@@ -299,6 +378,16 @@ router.patch(
     const employee = await prisma.employee.findUnique({ where: { id: req.params.id } });
     if (!employee) throw errors.notFound('Employee not found.');
 
+    // A department or team that does not exist would be a foreign-key error (500); say so.
+    if (req.validated.departmentId) {
+      const department = await prisma.department.findUnique({ where: { id: req.validated.departmentId } });
+      if (!department) throw errors.validation('That department does not exist.');
+    }
+    if (req.validated.teamId) {
+      const team = await prisma.team.findUnique({ where: { id: req.validated.teamId } });
+      if (!configuredTeam(team)) throw errors.validation('Choose one of the award teams.');
+    }
+
     const updated = await prisma.employee.update({
       where: { id: employee.id },
       data: req.validated,
@@ -318,13 +407,27 @@ router.patch(
 
 // ---------------------------------------------------------------- teams & departments
 
+// Rows in the order packages/shared/constants.js declares them; anything else that is still
+// in the database (kept because it is in use) is listed after the configured values.
+function inConfiguredOrder(rows, configured) {
+  const byName = new Map(rows.map((row) => [row.name, row]));
+  const extra = rows.map((row) => row.name).filter((name) => !configured.includes(name));
+  return [...configured, ...extra].filter((name) => byName.has(name));
+}
+
 router.get(
   '/teams',
   asyncHandler(async (_req, res) => {
-    const teams = await prisma.team.findMany({
-      orderBy: { name: 'asc' },
+    const teams = await prisma.team.findMany({ where: { code: { not: null } } });
+    const byCode = new Map(teams.map((team) => [team.code, team]));
+    res.json({
+      teams: TEAM_DEFINITIONS.filter((definition) => byCode.has(definition.code)).map((definition) => ({
+        id: byCode.get(definition.code).id,
+        name: byCode.get(definition.code).name,
+        code: definition.code,
+      })),
+      configured: TEAMS,
     });
-    res.json({ teams: teams.map((team) => ({ id: team.id, name: team.name })) });
   })
 );
 
@@ -332,16 +435,39 @@ router.get(
   '/departments',
   asyncHandler(async (_req, res) => {
     const departments = await prisma.department.findMany({
-      orderBy: { name: 'asc' },
       include: { _count: { select: { employees: true } } },
     });
+    const byName = new Map(departments.map((department) => [department.name, department]));
     res.json({
-      departments: departments.map((department) => ({
-        id: department.id,
-        name: department.name,
-        employees: department._count.employees,
+      departments: inConfiguredOrder(departments, DEPARTMENTS).map((name) => ({
+        id: byName.get(name).id,
+        name,
+        employees: byName.get(name)._count.employees,
       })),
+      configured: DEPARTMENTS,
     });
+  })
+);
+
+// POST /api/admin/taxonomy/sync — makes departments and teams match the shared constants
+// (packages/shared/constants.js): missing rows are created, a legacy row that still carries
+// the name of a configured team is retired, and leftovers are removed only when nothing
+// references them. Safe to run while an election is running.
+router.post(
+  '/taxonomy/sync',
+  asyncHandler(async (req, res) => {
+    const report = await pruneTaxonomy(prisma);
+    const [departments, teams] = await Promise.all([
+      prisma.department.count(),
+      prisma.team.count({ where: { code: { not: null } } }),
+    ]);
+    await audit({
+      actorId: req.user.id,
+      action: ACTIONS.TAXONOMY_SYNCED,
+      details: report,
+      ip: clientIp(req),
+    });
+    res.json({ ok: true, departments, teams, ...report });
   })
 );
 
@@ -375,16 +501,27 @@ router.get(
     const phase = req.phase;
     if (phase === 'PHASE_1') {
       const tally = await computePhase1Tally();
-      return res.json({ phase, tally, problems: cutProblems(tally) });
+      return res.json({
+        phase,
+        tally,
+        problems: cutProblems(tally),
+        recommended: advancingRecommendation(tally),
+      });
     }
     if (phase === 'PHASE_2') {
       const tally = await computePhase2Tally();
-      return res.json({ phase, tally, problems: cutProblems(tally) });
+      return res.json({
+        phase,
+        tally,
+        problems: cutProblems(tally),
+        recommended: advancingRecommendation(tally),
+      });
     }
     return res.json({
       phase,
       tally: null,
       problems: [],
+      recommended: null,
       message: 'Tallies are available while Phase 1 or Phase 2 is open.',
     });
   })
@@ -394,6 +531,9 @@ const confirmSchema = z.object({
   ids: z.array(z.string().min(1)).optional(),
   resolveTies: z.boolean().optional().default(false),
 });
+
+// cutProblems() returns both unresolved ties and hard shortfalls; these are the tie ones.
+const TIEWORDS = /\btie\b/i;
 
 // POST /api/admin/candidates/confirm — confirms the top 5 per category and pooled
 // limit, adding category finalists as needed to preserve minimum coverage.
@@ -409,10 +549,27 @@ router.post(
     const tally = phase === 'PHASE_1' ? await computePhase1Tally() : await computePhase2Tally();
     const problems = cutProblems(tally);
 
-    // A tie across the cut line blocks the cut until the admin explicitly resolves it.
-    if (problems.length > 0 && !req.validated.resolveTies) {
-      throw errors.tieUnresolved(problems.join(' '));
+    // A tie across the cut line blocks the cut until the admin explicitly resolves it. A
+    // shortfall (a category below its minimum, or fewer than 6 people after Phase 2) is not
+    // a tie and cannot be waved through — it needs more candidates, not an acknowledgement.
+    const ties = problems.filter((problem) => TIEWORDS.test(problem));
+    const blockers = problems.filter((problem) => !TIEWORDS.test(problem));
+    if (blockers.length > 0) throw errors.conflict(blockers.join(' '));
+    if (ties.length > 0 && !req.validated.resolveTies) {
+      throw errors.tieUnresolved(ties.join(' '));
     }
+
+    const limit = phase === 'PHASE_1' ? config.rules.phase1Finalists : config.rules.phase2FinalistsMax;
+    // `advancing` is the pooled top people. `applyCut` also saves the category-coverage
+    // finalists, so the rows carrying forward can be more than this set; the response reports
+    // the whole shortlist the admin confirmed, not just the pooled cut.
+    const advancing = selectAdvancingPeople(tally, peopleAdvanceLimit(tally, limit));
+    // The shortlist that actually carries forward: the pooled cut, plus the category finalists
+    // added to keep every category a contest. The phase gate verifies exactly this set.
+    const shortlisted = new Set([
+      ...advancing,
+      ...(tally.people || []).filter((person) => person.advances).map((person) => person.id),
+    ]);
 
     await prisma.$transaction(async (tx) => {
       await applyCut(tx, tally);
@@ -423,7 +580,7 @@ router.post(
       action: ACTIONS.CUT_CONFIRMED,
       details: {
         phase,
-        people: tally.people.filter((person) => person.advances).length,
+        people: [...shortlisted],
         teams: (tally.teams || []).filter((team) => team.advances).length,
         resolvedTies: problems.length > 0,
       },
@@ -433,9 +590,9 @@ router.post(
     res.json({
       ok: true,
       phase,
-      people: tally.people.filter((person) => person.advances).map((person) => person.id),
+      people: [...shortlisted],
       teams: (tally.teams || []).filter((team) => team.advances).map((team) => team.teamId),
-      resolvedTies: problems,
+      resolvedTies: ties,
     });
   })
 );
@@ -484,41 +641,58 @@ router.post(
     if (!confirm) throw errors.validation('Confirm the phase change to continue.');
 
     // Phase 1 → 2: the top 15 must be confirmed, no tie unresolved, every category keeps
-    // at least MIN_CANDIDATES_PER_CATEGORY candidates.
+    // at least MIN_CANDIDATES_PER_CATEGORY candidates. The confirmed cut must still equal
+    // what the current tallies produce — a nomination added after the cut cannot silently
+    // change who goes to the committee.
     if (current === 'PHASE_1' && next === 'PHASE_2') {
-      const confirmed = await prisma.candidate.count({ where: { inPhase2: true } });
-      if (confirmed === 0) {
+      const tally = await computePhase1Tally();
+      const standing = await standingCut('PHASE_1', tally, config.rules.phase1Finalists);
+      if (standing.count === 0) {
         throw errors.cutNotConfirmed('Confirm the Phase 1 cut (top 5 per category, top 15 overall) first.');
       }
+      if (standing.drifted > 0) {
+        throw errors.cutNotConfirmed(
+          `The Phase 1 cut no longer matches the current tally (${standing.drifted} candidate(s) differ). Confirm the cut again so what moves on is what you confirmed.`
+        );
+      }
       // Ties were resolved when the admin confirmed the cut, so only the hard checks remain.
-      const tally = await computePhase1Tally();
       const problems = cutProblems(tally, { includeTies: false });
       if (problems.length > 0) throw errors.conflict(problems.join(' '));
     }
 
     // Phase 2 → 3: 6–10 people shortlisted overall, no tie unresolved, every category
-    // still has at least 2 candidates.
+    // still has at least 2 candidates — and the committee picks that carried them forward
+    // are still the ones on the candidate rows.
     if (current === 'PHASE_2' && next === 'PHASE_3') {
-      const confirmed = await prisma.candidate.count({ where: { inPhase3: true } });
-      if (confirmed === 0) {
+      const tally = await computePhase2Tally();
+      const standing = await standingCut('PHASE_2', tally, config.rules.phase2FinalistsMax);
+      if (standing.count === 0) {
         throw errors.cutNotConfirmed('Confirm the Phase 2 cut (top 6–10 overall) first.');
       }
-      const tally = await computePhase2Tally();
+      if (standing.drifted > 0) {
+        throw errors.cutNotConfirmed(
+          `The Phase 2 cut no longer matches the current tally (${standing.drifted} candidate(s) differ). Confirm the cut again so the ballot is exactly what the committee passed on.`
+        );
+      }
       const problems = cutProblems(tally, { includeTies: false });
       if (problems.length > 0) throw errors.conflict(problems.join(' '));
     }
 
-    // Closing the final vote: save the Phase 3 points on each candidate row.
+    // Closing the final vote: save the Phase 3 points on EVERY shortlisted row, including
+    // candidates that received no vote (0 points). A row left at its default would hide a
+    // genuine zero behind "not counted yet", which is not something the results page can
+    // tell apart once the vote table is the only source of truth.
     if (current === 'PHASE_3' && next === 'CLOSED') {
-      const voteGroups = await prisma.vote.groupBy({
-        by: ['candidateId'],
-        _count: { _all: true },
-      });
+      const [voteGroups, shortlist] = await Promise.all([
+        prisma.vote.groupBy({ by: ['candidateId'], _count: { _all: true } }),
+        prisma.candidate.findMany({ where: { inPhase3: true }, select: { id: true } }),
+      ]);
+      const finalPoints = new Map(voteGroups.map((group) => [group.candidateId, group._count._all]));
       await prisma.$transaction(
-        voteGroups.map((group) =>
+        shortlist.map((candidate) =>
           prisma.candidate.update({
-            where: { id: group.candidateId },
-            data: { finalPoints: group._count._all },
+            where: { id: candidate.id },
+            data: { finalPoints: finalPoints.get(candidate.id) ?? 0 },
           })
         )
       );
@@ -702,7 +876,11 @@ router.post(
       }
     }
 
-    await prisma.settings.update({
+    // Publishing a stage twice is harmless: `req.settings` is the snapshot from when the
+    // request started, so returning it below would report the flags from BEFORE this write.
+    // Read the saved row back instead, and only record an audit entry for a real change.
+    const alreadyPublic = Boolean(req.settings?.[publication.field]);
+    const settings = await prisma.settings.update({
       where: { id: 1 },
       data: {
         [publication.field]: true,
@@ -710,21 +888,24 @@ router.post(
       },
     });
 
-    await audit({
-      actorId: req.user.id,
-      action: ACTIONS.RESULTS_PUBLISHED,
-      details: { stage, from: req.phase },
-      ip: clientIp(req),
-    });
+    if (!alreadyPublic) {
+      await audit({
+        actorId: req.user.id,
+        action: ACTIONS.RESULTS_PUBLISHED,
+        details: { stage, from: req.phase },
+        ip: clientIp(req),
+      });
+    }
 
     res.json({
       ok: true,
       stage,
-      phase: stage === 'PHASE_3' ? Phase.PUBLISHED : req.phase,
+      // PHASE_3 publication is what closes the cycle: CLOSED becomes PUBLISHED.
+      phase: stage === 'PHASE_3' ? Phase.PUBLISHED : settings.phase,
       publications: {
-        phase1: stage === 'PHASE_1' || (req.settings?.phase1ResultsPublic ?? false),
-        phase2: stage === 'PHASE_2' || (req.settings?.phase2ResultsPublic ?? false),
-        phase3: stage === 'PHASE_3' || (req.settings?.resultsPublic ?? false),
+        phase1: settings.phase1ResultsPublic,
+        phase2: settings.phase2ResultsPublic,
+        phase3: settings.resultsPublic,
       },
     });
   })

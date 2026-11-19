@@ -35,12 +35,13 @@ Error shape, always:
 
 ### `POST /auth/login`
 ```json
-{ "phone": "0712345678", "departmentId": "…optional…", "teamId": "…optional…" }
+{ "phone": "0712345678", "departmentId": "…optional…" }
 ```
-For an employee without a department or team, the first request returns
-`{ requiresDepartment, departments: [{ id, name }], requiresTeam, teams: [{ id, name }] }`
-without creating a session (either flag may be false). Submit again with the selected
-`departmentId` and/or `teamId` to save them and sign in.
+For an employee without a department, the first request returns
+`{ requiresDepartment: true, departments: [{ id, name }], requiresTeam: false, teams: [] }`
+without creating a session. Submit again with the selected `departmentId` to save it and sign
+in. The department is the only thing asked at sign-in: a person's team is staff data an
+administrator sets from `/admin/employees`.
 `200` → `{ user: { id, fullName, phone, role, department, team }, phase }`. Subsequent sign-ins
 require only the phone number. Rate limited to `LOGIN_RATE_LIMIT` (default 10) failed
 attempts per 15 minutes per IP. Phone-only login does not verify control of the phone number.

@@ -69,16 +69,11 @@ class Session {
 
   async login(phone) {
     let result = await this.call('/auth/login', { method: 'POST', body: { phone } });
-    if (result.body?.requiresDepartment || result.body?.requiresTeam) {
+    // Sign-in asks for the department only; a person's team is staff data an admin sets.
+    if (result.body?.requiresDepartment) {
       const body = { phone };
-      if (result.body.requiresDepartment) {
-        body.departmentId = result.body.departments?.[0]?.id;
-        if (!body.departmentId) throw new Error('No departments are available for first-login onboarding.');
-      }
-      if (result.body.requiresTeam) {
-        body.teamId = result.body.teams?.[0]?.id;
-        if (!body.teamId) throw new Error('No teams are available for first-login onboarding.');
-      }
+      body.departmentId = result.body.departments?.[0]?.id;
+      if (!body.departmentId) throw new Error('No departments are available for first-login onboarding.');
       result = await this.call('/auth/login', { method: 'POST', body });
       this.departmentAssigned = result.status === 200;
     }
