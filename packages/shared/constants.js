@@ -36,6 +36,8 @@ const DEPARTMENTS = /** @type {const} */ ([
   'Finance',
   'HR/Admin',
   'Marketing',
+  'Customer Service',
+  'Project Management',
 ]);
 
 // §4 — seeded in prisma/seed.js. `forTeams` is true only for Team of the Year.
