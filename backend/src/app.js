@@ -81,4 +81,13 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+// Vercel's Express detection loads this file directly and needs a function as the
+// default export. Keep `createApp` available for src/index.js and the tests.
+let cachedApp;
+function handler(req, res) {
+  cachedApp = cachedApp || createApp();
+  return cachedApp(req, res);
+}
+handler.createApp = createApp;
+
+module.exports = handler;
