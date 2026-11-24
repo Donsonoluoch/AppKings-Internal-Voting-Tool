@@ -22,6 +22,7 @@ function Nominate() {
   const [nomineeTeamId, setNomineeTeamId] = useState('');
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState(null); // the nomination being replaced
+  const [isEditing, setIsEditing] = useState(false);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -98,6 +99,11 @@ function Nominate() {
     fillFrom(mine, id);
   };
 
+  const startEditing = () => {
+    setIsEditing(true);
+    if (categories[0]) selectCategory(categories[0].id);
+  };
+
   /**
    * After a save the form is cleared and the flow moves on to the next category that still
    * needs a nomination, so a voter can work straight down the list without touching the
@@ -161,10 +167,11 @@ function Nominate() {
     mine.some((nomination) => nomination.categoryId === item.id)
   ).length;
   const allNominationsComplete = categories.length > 0 && completedCount === categories.length;
+  const showCompletion = allNominationsComplete && (phase !== 'PHASE_1' || !isEditing);
 
   return (
     <AppShell title="Nominate a colleague" description="One nomination per category." minRole="EMPLOYEE">
-      {!loading && phase !== 'PHASE_1' && (
+      {!loading && !showCompletion && phase !== 'PHASE_1' && (
         <Alert tone="warning" className="mb-4">
           {phase === 'NOT_STARTED'
             ? 'Nominations are not open yet. You can review saved submissions, but cannot submit or edit them right now.'
@@ -172,13 +179,32 @@ function Nominate() {
         </Alert>
       )}
 
-      {!loading && phase === 'PHASE_1' && categories.length > 0 && (
+      {!loading && showCompletion && (
+        <section className="card flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <StatusPill tone="green">Complete</StatusPill>
+            <h2 className="mt-3 text-xl font-bold tracking-tight text-slate-900">You’re all done!</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              You submitted nominations for all {categories.length} categories.
+              {phase === 'PHASE_1'
+                ? ' You can still change them until Phase 1 closes.'
+                : ' Phase 1 has closed, so your nominations are locked.'}
+            </p>
+          </div>
+          {phase === 'PHASE_1' && (
+            <button type="button" className="btn-secondary shrink-0" onClick={startEditing}>
+              Edit nominations
+            </button>
+          )}
+        </section>
+      )}
+
+      {!loading && phase === 'PHASE_1' && categories.length > 0 && !showCompletion && (
         <Alert tone={allNominationsComplete ? 'success' : 'info'} className="mb-4">
           {allNominationsComplete ? (
             <>
-              <strong>All nominations complete.</strong> You have submitted nominations for all {categories.length}{' '}
-              categories. You can still edit or replace them until Phase 1 closes; select a saved category below to make
-              changes.
+              <strong>Editing your nominations.</strong> You have submitted all {categories.length} categories. Select
+              a category to change it, or finish editing when you’re done.
             </>
           ) : (
             <>
@@ -189,7 +215,7 @@ function Nominate() {
         </Alert>
       )}
 
-      {summary && (
+      {!showCompletion && summary && (
         <section className="card mb-4 !p-4 sm:!p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -212,12 +238,12 @@ function Nominate() {
         </section>
       )}
 
-      <Alert tone="error">{error}</Alert>
-      <Alert tone="success">{success}</Alert>
+      {!showCompletion && <Alert tone="error">{error}</Alert>}
+      {!showCompletion && <Alert tone="success">{success}</Alert>}
 
       {loading && <Spinner label="Loading nominations…" />}
 
-      {!loading && categories.length > 0 && (
+      {!loading && !showCompletion && categories.length > 0 && (
         <nav className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Nomination categories">
           {categories.map((item, index) => {
             const saved = mine.some((nomination) => nomination.categoryId === item.id);
@@ -246,11 +272,11 @@ function Nominate() {
         </nav>
       )}
 
-      {!loading && categories.length === 0 && (
+      {!loading && !showCompletion && categories.length === 0 && (
         <Alert tone="warning">No nomination categories are available right now.</Alert>
       )}
 
-      {!loading && category && (
+      {!loading && !showCompletion && category && (
       <form className="card space-y-5 sm:p-6" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <div>
           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -337,10 +363,15 @@ function Nominate() {
         <button type="submit" className="btn-primary w-full sm:w-auto" disabled={!canSubmit || phase !== 'PHASE_1' || busy}>
           {busy ? 'Saving…' : existingInCategory ? 'Save changes' : 'Save nomination and continue'}
         </button>
+        {isEditing && phase === 'PHASE_1' && allNominationsComplete && (
+          <button type="button" className="btn-secondary ml-2" onClick={() => setIsEditing(false)}>
+            Done editing
+          </button>
+        )}
       </form>
       )}
 
-      <section className="mt-8">
+      {!showCompletion && <section className="mt-8">
         <h2 className="mb-3 text-lg font-bold tracking-tight text-slate-900">Your nominations</h2>
         {mine.length === 0 ? (
           <p className="text-sm text-slate-500">You have not nominated anyone yet.</p>
@@ -366,7 +397,7 @@ function Nominate() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
 
       <p className="mt-6 text-xs text-slate-500">
         Every pick is worth 1 point. After Phase 1 the top 5 per category become finalists and the top 15 people
