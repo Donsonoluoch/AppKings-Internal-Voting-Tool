@@ -94,6 +94,7 @@ model Nomination {
   nominatorId   String
   nomineeId     String? // employee nominee
   nomineeTeamId String? // team nominee (Team of the Year)
+  // Retained for existing database rows; new nominations leave this legacy field blank.
   justification String
   isSelf        Boolean  @default(false)
   createdAt     DateTime @default(now())

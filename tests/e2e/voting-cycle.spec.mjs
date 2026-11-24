@@ -70,22 +70,6 @@ const COMMITTEE_SIZE = Number(process.env.E2E_COMMITTEE_SIZE || 3);
 // with a clear Employee of the Year instead of a tie at the top.
 const CONSENSUS_DRAWS = Number(process.env.E2E_CONSENSUS_DRAWS || 40);
 
-const JUSTIFICATIONS = [
-  'Delivered a key project under a tight deadline this year.',
-  'Consistently the first to help the team and the customer.',
-  'Handled a difficult client without losing the relationship.',
-  'Mentored two juniors, who now run their shifts alone.',
-  'Cut the turnaround time on an important internal process.',
-  'Stayed late through the busiest weeks of the year without complaint.',
-  'Came up with a small change that saves the team hours every week.',
-  'Took ownership of a problem nobody else would pick up.',
-];
-const TEAM_JUSTIFICATIONS = [
-  'The team delivered together through the busiest quarter of the year.',
-  'Supported every other team without being asked.',
-  'Shipped a difficult delivery on time and together.',
-];
-
 // ─── State shared by the steps ────────────────────────────────────────────────
 // These survive from one test to the next: a test file is one worker, and this file is a
 // sequence of steps through ONE election.
@@ -350,16 +334,15 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
       const result = await voter.request('PUT', '/api/nominations', {
         categoryId: category.id,
         nomineeId: nominee.id,
-        justification: random.pick(JUSTIFICATIONS),
       });
       expect(result.ok, `${member.fullName} nominating in ${category.name}: ${failure(result)}`).toBe(true);
+      expect(result.body.nomination).not.toHaveProperty('justification');
       expected.addNomination(category.id, nominee.id, member.id);
     }
     const team = teams[index % teams.length];
     const result = await voter.request('PUT', '/api/nominations', {
       categoryId: teamCategory().id,
       nomineeTeamId: team.id,
-      justification: random.pick(TEAM_JUSTIFICATIONS),
     });
     expect(result.ok, `${member.fullName} nominating a team: ${failure(result)}`).toBe(true);
     expected.addNomination(teamCategory().id, team.id, member.id);
@@ -388,7 +371,6 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
   const replaced = await voter.request('PUT', '/api/nominations', {
     categoryId: category.id,
     nomineeId: replacement.id,
-    justification: 'Replaced pick: a colleague who carried the team all year.',
   });
   expect(replaced.ok, failure(replaced)).toBe(true);
   expected.replaceNomination(category.id, replacement.id, first.id);
@@ -405,7 +387,6 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
   const self = await voter.request('PUT', '/api/nominations', {
     categoryId: employeeCategories()[1].id,
     nomineeId: first.id,
-    justification: 'I would like to recognise my own contribution this year.',
   });
   expect(self.ok, `one self-nomination is allowed: ${failure(self)}`).toBe(true);
   // Replaced, not added: this voter already had a pick in that category.
@@ -417,7 +398,6 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
   const secondSelf = await voter.request('PUT', '/api/nominations', {
     categoryId: employeeCategories()[3].id,
     nomineeId: first.id,
-    justification: 'A second self-nomination should not be allowed.',
   });
   expect(secondSelf.status, failure(secondSelf)).toBe(409);
   expect(secondSelf.body.error.code).toBe('CONFLICT');
@@ -426,17 +406,18 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
   const unknown = await voter.request('PUT', '/api/nominations', {
     categoryId: employeeCategories()[3].id,
     nomineeId: '00000000-0000-0000-0000-000000000000',
-    justification: 'Nominating an unknown id should be rejected.',
   });
   expect(unknown.ok, 'an unknown nominee is rejected').toBe(false);
 
-  // A justification shorter than the minimum is refused too.
-  const short = await voter.request('PUT', '/api/nominations', {
+  // Legacy justification values are ignored and are not returned.
+  const noJustificationRequired = await voter.request('PUT', '/api/nominations', {
     categoryId: employeeCategories()[3].id,
     nomineeId: replacement.id,
     justification: 'too short',
   });
-  expect(short.status, failure(short)).toBe(400);
+  expect(noJustificationRequired.ok, failure(noJustificationRequired)).toBe(true);
+  expect(noJustificationRequired.body.nomination).not.toHaveProperty('justification');
+  expected.replaceNomination(employeeCategories()[3].id, replacement.id, first.id);
 
   // One nomination per voter per category, whatever happened above.
   for (const category of categories) {
@@ -448,7 +429,6 @@ test('2. all 58 nominate one colleague per category, and the self-nomination lim
   const wrongKind = await voter.request('PUT', '/api/nominations', {
     categoryId: teamCategory().id,
     nomineeId: replacement.id,
-    justification: 'Team of the Year must be nominated as a team, not a person.',
   });
   expect(wrongKind.ok, 'Team of the Year rejects a person').toBe(false);
 });
@@ -486,7 +466,6 @@ test('3. Phase 1 closes on the top-5 / top-15 cut, and Phase 1 results are publi
   const lateNomination = await voters.get(members[0].phone).request('PUT', '/api/nominations', {
     categoryId: categories[0].id,
     nomineeId: members[1].id,
-    justification: 'A nomination after Phase 1 closed should not be accepted.',
   });
   expect(lateNomination.status, failure(lateNomination)).toBe(409);
 

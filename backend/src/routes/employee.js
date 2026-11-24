@@ -96,7 +96,6 @@ const nominationSchema = z
     categoryId: z.string().min(1),
     nomineeId: z.string().min(1).optional().nullable(),
     nomineeTeamId: z.string().min(1).optional().nullable(),
-    justification: z.string().trim().optional(),
   })
   .refine((value) => Boolean(value.nomineeId) !== Boolean(value.nomineeTeamId), {
     message: 'Pick one nominee: an employee, or a team for Team of the Year.',
@@ -110,17 +109,6 @@ router.put(
   validate(nominationSchema),
   asyncHandler(async (req, res) => {
     const { categoryId, nomineeId, nomineeTeamId } = req.validated;
-    const justification = (req.validated.justification || '').trim();
-    const { minJustification } = config.rules;
-
-    if (justification.length < minJustification) {
-      throw errors.validation(`Please write at least ${minJustification} characters.`, [
-        { path: 'justification', message: 'Too short' },
-      ]);
-    }
-    if (justification.length > 1000) {
-      throw errors.validation('Keep the justification under 1000 characters.');
-    }
 
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
     if (!category) throw errors.notFound('Category not found.');
@@ -168,7 +156,7 @@ router.put(
       const data = {
         nomineeId: nomineeId || null,
         nomineeTeamId: nomineeTeamId || null,
-        justification,
+        justification: '',
         isSelf,
       };
 
@@ -200,7 +188,6 @@ router.put(
         id: nomination.id,
         categoryId: nomination.categoryId,
         nominee: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? null,
-        justification: nomination.justification,
         isSelf: nomination.isSelf,
         createdAt: nomination.createdAt,
       },
@@ -230,7 +217,6 @@ router.get(
         nomineeId: nomination.nomineeId,
         nomineeTeamId: nomination.nomineeTeamId,
         nominee: nomination.nominee?.fullName ?? nomination.nomineeTeam?.name ?? null,
-        justification: nomination.justification,
         isSelf: nomination.isSelf,
         createdAt: nomination.createdAt,
       })),

@@ -103,19 +103,12 @@ router.get(
             department: nomination.nominee?.department?.name ?? null,
             nominationCount: 0,
             nominators: [],
-            justifications: [],
             isCandidate: madeCandidate.has(`${category.id}:${nomineeKey}`),
           });
         }
         const entry = byNominee.get(nomineeKey);
         entry.nominationCount += 1;
         entry.nominators.push(nomination.nominator.fullName);
-        entry.justifications.push({
-          nominator: nomination.nominator.fullName,
-          justification: nomination.justification,
-          isSelf: nomination.isSelf,
-          createdAt: nomination.createdAt,
-        });
       }
       return {
         ...category,
@@ -152,7 +145,7 @@ router.get(
   })
 );
 
-// GET /api/committee/candidates/:id — Phase 2 detail: justifications + evidence.
+// GET /api/committee/candidates/:id — Phase 2 candidate detail.
 router.get(
   '/candidates/:id',
   requirePhase('PHASE_2'),
@@ -168,25 +161,8 @@ router.get(
       throw errors.notFound('Candidate not found.');
     }
 
-    const nominations = await prisma.nomination.findMany({
-      where: {
-        categoryId: candidate.categoryId,
-        ...(candidate.employeeId
-          ? { nomineeId: candidate.employeeId }
-          : { nomineeTeamId: candidate.teamId }),
-      },
-      include: { nominator: { select: { fullName: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
-
     res.json({
       candidate: presentCandidate(candidate, req.user.id),
-      justifications: nominations.map((nomination) => ({
-        nominator: nomination.nominator.fullName,
-        justification: nomination.justification,
-        isSelf: nomination.isSelf,
-        createdAt: nomination.createdAt,
-      })),
     });
   })
 );

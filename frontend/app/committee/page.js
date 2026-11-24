@@ -23,7 +23,7 @@ function CommitteeHome() {
   return (
     <AppShell
       title="Committee portal"
-      description="Review the top 15, read the justifications and evidence, and pick the strongest candidate per category."
+      description="Review the top 15 and pick the strongest candidate per category."
       minRole="COMMITTEE"
     >
       {user && <p className="mb-4 text-sm text-slate-600">Welcome, <strong>{user.fullName}</strong>.</p>}

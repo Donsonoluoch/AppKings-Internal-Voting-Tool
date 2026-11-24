@@ -148,7 +148,7 @@ only when the development database is empty, and is not recreated on restart.
 | `BOOTSTRAP_ADMIN_NAME` | `Steve Martin` | Name for the initial admin |
 | `EMPLOYEE_ROSTER_FILE` | workbook path | Path to the roster workbook when running the seed |
 | `DB_PORT` | `5432` | Optional development Compose database port |
-| `SELF_NOMINATION_LIMIT`, `NOMINATION_MIN_JUSTIFICATION`, `TOP_PER_CATEGORY`, `PHASE1_FINALISTS`, `PHASE2_FINALISTS_MIN`, `PHASE2_FINALISTS_MAX`, `MIN_CANDIDATES_PER_CATEGORY`, `TEAM_FINALISTS`, `COMMITTEE_PICKS_PER_CATEGORY` | see `.env.example` | Every rule from context §1 |
+| `SELF_NOMINATION_LIMIT`, `TOP_PER_CATEGORY`, `PHASE1_FINALISTS`, `PHASE2_FINALISTS_MIN`, `PHASE2_FINALISTS_MAX`, `MIN_CANDIDATES_PER_CATEGORY`, `TEAM_FINALISTS`, `COMMITTEE_PICKS_PER_CATEGORY` | see `.env.example` | Every rule from context §1 |
 
 ## 5. Backups
 

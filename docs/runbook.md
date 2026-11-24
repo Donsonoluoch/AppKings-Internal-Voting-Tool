@@ -36,7 +36,7 @@ reset state and confirming the roster and settings. Back up the database before 
 
 ## During Phase 1 — nominations
 
-Every employee nominates one colleague per category, with a justification.
+Every employee nominates one colleague per category.
 
 - Progress: `/admin` → active employees, departments to confirm and nominations per category.
 - New phone or a wrong role: `/admin/employees` → edit, or re-run the CSV import.
@@ -59,7 +59,7 @@ Every employee nominates one colleague per category, with a justification.
 
 ## During Phase 2 — committee
 
-- The committee opens `/committee` to read the justifications and `/committee/vote` to pick.
+- The committee opens `/committee` to review candidates and `/committee/vote` to pick.
 - A member with a personal or financial relationship declares a conflict on the candidate
   page; the system then blocks their pick for that candidate.
 - Picks can be changed until the phase closes. Members never see each other's picks or the

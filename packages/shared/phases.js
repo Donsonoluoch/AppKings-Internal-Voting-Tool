@@ -9,7 +9,7 @@ const PHASE_META = {
   PHASE_1: {
     label: 'Phase 1 — Nominations',
     tagline: 'One nomination per category, 1 point each. One self-nomination allowed, in total.',
-    employee: 'Nominate one colleague per category. Every nomination needs a short justification.',
+    employee: 'Nominate one colleague per category.',
   },
   PHASE_2: {
     label: 'Phase 2 — Committee review',

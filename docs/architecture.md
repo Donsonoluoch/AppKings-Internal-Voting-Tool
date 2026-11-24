@@ -82,7 +82,6 @@ request ─▶ helmet ─▶ CORS ─▶ json ─▶ cookieParser
 | Self-nomination limit | `routes/employee.js`, inside the same transaction as the upsert |
 | One nomination per category | DB unique `(categoryId, nominatorId)` + upsert |
 | Eligible nominee only | `routes/employee.js` nomination handler |
-| Justification ≥ 20 characters | `config.rules.minJustification` |
 | Cut sizes, ties, minimum candidates | `lib/tally.js` (`cutProblems`, `applyCut`) |
 | Phase move requires a confirmed cut | `routes/admin.js` `/phase` |
 | Committee pick limit and conflicts | `routes/committee.js` `/picks` |
