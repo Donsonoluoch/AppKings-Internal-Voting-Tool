@@ -92,6 +92,27 @@ function Dashboard() {
           >
             <div className="h-full rounded-full bg-gradient-to-r from-brand-600 to-emerald-500 transition-all" style={{ width: `${Math.min(100, completion)}%` }} />
           </div>
+          {phase === 'PHASE_1' && summary && categories.length > 0 && (
+            <p className="mt-3 text-sm text-slate-600">
+              {completed >= categories.length ? (
+                <>
+                  <strong className="text-emerald-700">All nominations complete.</strong> You can still edit or replace
+                  them until Phase 1 closes.{' '}
+                  <Link href="/employee/nominate" className="link">Review nominations</Link>
+                </>
+              ) : (
+                <>
+                  You have completed <strong>{completed} of {categories.length}</strong> categories. Saved nominations
+                  can be edited until Phase 1 closes.
+                </>
+              )}
+            </p>
+          )}
+          {phase !== 'PHASE_1' && phase !== 'NOT_STARTED' && (
+            <p className="mt-3 text-sm text-slate-600">
+              Phase 1 has closed. Submitted nominations can no longer be edited.
+            </p>
+          )}
           <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-xl bg-slate-50 px-4 py-3">
               <dt className="text-xs text-slate-500">Nominations you have made</dt>

@@ -157,12 +157,35 @@ function Nominate() {
 
   const canSubmit =
     categoryId && (isTeamCategory ? nomineeTeamId : nomineeId);
+  const completedCount = categories.filter((item) =>
+    mine.some((nomination) => nomination.categoryId === item.id)
+  ).length;
+  const allNominationsComplete = categories.length > 0 && completedCount === categories.length;
 
   return (
     <AppShell title="Nominate a colleague" description="One nomination per category." minRole="EMPLOYEE">
-      {phase !== 'PHASE_1' && (
+      {!loading && phase !== 'PHASE_1' && (
         <Alert tone="warning" className="mb-4">
-          Nominations are not open right now (current phase: {phase}). You can review what you have already submitted.
+          {phase === 'NOT_STARTED'
+            ? 'Nominations are not open yet. You can review saved submissions, but cannot submit or edit them right now.'
+            : 'Phase 1 has closed. You can review your nominations, but can no longer edit them.'}
+        </Alert>
+      )}
+
+      {!loading && phase === 'PHASE_1' && categories.length > 0 && (
+        <Alert tone={allNominationsComplete ? 'success' : 'info'} className="mb-4">
+          {allNominationsComplete ? (
+            <>
+              <strong>All nominations complete.</strong> You have submitted nominations for all {categories.length}{' '}
+              categories. You can still edit or replace them until Phase 1 closes; select a saved category below to make
+              changes.
+            </>
+          ) : (
+            <>
+              <strong>Nominations in progress.</strong> You have completed {completedCount} of {categories.length}{' '}
+              categories. You can edit or replace any saved nomination until Phase 1 closes.
+            </>
+          )}
         </Alert>
       )}
 
@@ -237,7 +260,9 @@ function Nominate() {
           <p className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">{category.criteria}</p>
           {existingInCategory && (
             <p className="mt-2 text-xs text-amber-700">
-              You can update this nomination until Phase 1 closes.
+              {phase === 'PHASE_1'
+                ? 'You can update this nomination until Phase 1 closes.'
+                : 'Phase 1 has closed, so this nomination can no longer be changed.'}
             </p>
           )}
         </div>
