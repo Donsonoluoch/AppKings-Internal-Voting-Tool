@@ -96,7 +96,6 @@ const CATEGORIES = [
 // Scoring is points only: one pick per category, 1 point each, no percentages.
 const DEFAULT_RULES = {
   SELF_NOMINATION_LIMIT: 1, // once in total, Phase 1 only
-  NOMINATION_MIN_JUSTIFICATION: 20,
   TOP_PER_CATEGORY: 5, // Phase 1: top 5 per category become finalists
   PHASE1_FINALISTS: 15, // Phase 1: pooled top 15 people overall
   PHASE2_FINALISTS_MIN: 6, // Phase 2: pooled top 6–10 people overall

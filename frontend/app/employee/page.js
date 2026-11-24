@@ -130,7 +130,7 @@ function Dashboard() {
 
       <p className="mt-6 text-xs text-slate-500">
         One pick per category, 1 point each. Self-nomination limit: {rules?.selfNominationLimit ?? 1} in total across
-        all categories. Justifications need at least {rules?.minJustification ?? 20} characters.
+        all categories.
       </p>
     </div>
   );

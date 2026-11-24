@@ -140,8 +140,8 @@ election database.
 NOT_STARTED → PHASE_1 (nominations) → PHASE_2 (committee) → PHASE_3 (final vote) → CLOSED → PUBLISHED
 ```
 
-1. **Phase 1** — every employee nominates one colleague per category (justification, min 20
-   characters). Picks can be replaced until the phase closes; one self-nomination in total.
+1. **Phase 1** — every employee nominates one colleague per category. Picks can be replaced
+   until the phase closes; one self-nomination in total.
    The admin confirms the cut: **top 5 per category**, the pooled **top 15 people**, plus
    any category finalists needed to keep every category represented.
 2. **Phase 2** — the committee makes one pick per category among Phase 2 candidates

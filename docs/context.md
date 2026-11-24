@@ -90,7 +90,7 @@ A user has one `role`: `EMPLOYEE`, `COMMITTEE` or `ADMIN`. Committee and Admin c
 
 ### Committee portal
 - View submitted nominations
-- Review candidate details, justifications and evidence
+- Review candidate details
 - Pick the strongest candidate per category (one pick per category, 1 point each)
 - Declare conflicts of interest
 - Open the shared Published results page
@@ -130,7 +130,7 @@ All three phases use the same mechanism: **point accumulation**. Each voter make
 
 | Phase | Who takes part | Action | Outcome |
 |-------|----------------|--------|---------|
-| 1 | All 57 roster accounts | One nomination per category, with a justification | Top 5 per category; pooled **top 15 people** plus category-coverage candidates as needed |
+| 1 | All 57 roster accounts | One nomination per category | Top 5 per category; pooled **top 15 people** plus category-coverage candidates as needed |
 | 2 | Committee members | One pick per category among Phase 2 candidates | Pooled **top 6–10 people** plus category-coverage candidates as needed |
 | 3 | All 57 roster accounts | One vote per category among the shortlist | Most points in a category wins |
 
@@ -157,14 +157,13 @@ phase results remain admin-only.
 
 ### Phase 1: Employee nominations
 - All 57 roster accounts nominate **one colleague per category** (up to 8 nominations). Skipping a category is allowed.
-- Each nomination requires a **justification** (min. 20 characters).
 - Employees can change their nomination in a category until Phase 1 closes (`PUT /api/nominations` replaces it — unique on `(categoryId, nominatorId)`).
 - Self-nomination is allowed **once in total** across all categories. It counts as 1 point like any other nomination.
 - Team of the Year nominates a team (department) instead of a person.
 - Result: the pooled top 15 plus category finalists needed to preserve minimum coverage (see the cut above).
 
 ### Phase 2: Committee review and shortlisting
-- The committee reviews the pooled finalists and any category-coverage candidates, their justifications and the evidence, and checks eligibility. The admin can remove an ineligible candidate before the cut.
+- The committee reviews the pooled finalists and any category-coverage candidates, and checks eligibility. The admin can remove an ineligible candidate before the cut.
 - In each category, every committee member makes **one pick** among the candidates in that category. Each pick is 1 point. Picks can be changed until the phase closes.
 - A member who declares a conflict of interest cannot pick that candidate.
 - Result: the pooled top 6–10 people overall advance, plus category finalists needed to preserve minimum coverage. Team of the Year advances its top 3 teams.
@@ -270,7 +269,7 @@ See `backend/prisma/schema.prisma` for the authoritative version. The models:
 - `Department` — the staff departments (`DEPARTMENTS`), a profile label only. No voting rule reads it.
 - `Employee` — name, phone, role, `eligible`, `active`, department (profile) and optional team.
 - `Category` — 8 seeded categories, `criteria`, `forTeams`, `sortOrder`.
-- `Nomination` — `categoryId`, `nominatorId`, `nomineeId` **or** `nomineeTeamId`, `justification`, `isSelf`; `@@unique([categoryId, nominatorId])` (one per category, replaceable until Phase 1 closes).
+- `Nomination` — `categoryId`, `nominatorId`, `nomineeId` **or** `nomineeTeamId`, `isSelf`; the legacy `justification` column is retained for existing rows and left blank on new nominations. `@@unique([categoryId, nominatorId])` (one per category, replaceable until Phase 1 closes).
 - `Candidate` — one row per category slot: `nominationPoints`, `committeePoints`, `finalPoints`, `inPhase2`, `inPhase3`.
 - `CommitteeVote` — `candidateId`, `memberId`, `categoryId`; `@@unique([candidateId, memberId])` (max `COMMITTEE_PICKS_PER_CATEGORY` per member per category is enforced in code).
 - `Conflict` — `candidateId`, `memberId`, `reason`.
@@ -311,7 +310,7 @@ Full request/response reference: `docs/api.md`.
 |--------|-------|-------|-------|
 | GET | `/categories` | any | Categories and criteria |
 | GET | `/colleagues` | any | List of eligible nominees (includes self, flagged `isSelf`). No phone numbers. |
-| PUT | `/nominations` | PHASE_1 | `{ categoryId, nomineeId or nomineeDeptId, justification }`: one per category, replaces the earlier choice until Phase 1 closes |
+| PUT | `/nominations` | PHASE_1 | `{ categoryId, nomineeId or nomineeTeamId }`: one per category, replaces the earlier choice until Phase 1 closes |
 | GET | `/nominations/mine` | any | Own submitted nominations |
 | GET | `/nominations/summary` | any | Counts + self-nomination budget |
 | GET | `/shortlist` | PHASE_3+ | Shortlisted candidates per category |
@@ -323,9 +322,9 @@ Full request/response reference: `docs/api.md`.
 ### Committee
 | Method | Route | Phase | Notes |
 |--------|-------|-------|-------|
-| GET | `/committee/nominations` | PHASE_1, PHASE_2 | Nominations and justifications grouped by nominee |
+| GET | `/committee/nominations` | PHASE_1, PHASE_2 | Nominations grouped by nominee |
 | GET | `/committee/candidates` | PHASE_2 | The pooled Phase 2 candidates plus any per-category coverage candidates, shown per category |
-| GET | `/committee/candidates/:id` | PHASE_2 | One candidate with every justification and evidence |
+| GET | `/committee/candidates/:id` | PHASE_2 | Candidate detail |
 | PUT | `/committee/picks` | PHASE_2 | `{ categoryId, candidateIds[] }`, max `COMMITTEE_PICKS_PER_CATEGORY`, 1 point each. Replaces the member's previous picks (blocked on conflict) |
 | POST | `/committee/conflicts` | PHASE_2 | `{ candidateId, reason }` |
 | GET | `/committee/picks` | PHASE_2 | The member's own picks only (never other members' picks or tallies) |
@@ -352,7 +351,6 @@ Full request/response reference: `docs/api.md`.
 - Self-nomination: allowed only in Phase 1, and only if the employee has **0** existing self-nominations in *other* categories (`SELF_NOMINATION_LIMIT=1`). Checked inside the same transaction as the write.
 - Only `eligible = true` employees can be nominated.
 - One nomination per employee per category.
-- Justification is required (min. 20 characters).
 - Phase 2 → 3 is blocked unless 6–10 people are shortlisted overall, no tie is unresolved, and every category still has at least 2 candidates.
 - Phase 1 → 2 is blocked until the top 15 is confirmed, no tie is unresolved, every category keeps at least `MIN_CANDIDATES_PER_CATEGORY` (2) candidates, and the required coverage fits within the configured limit.
 - Committee: up to `COMMITTEE_PICKS_PER_CATEGORY` (default 1) pick per category, 1 point each, no duplicate picks. Picks can be changed until Phase 2 closes.
@@ -372,11 +370,11 @@ Full request/response reference: `docs/api.md`.
 ```
 /login                    Phone login (+254 7XX XXX XXX, Continue)
 /employee                 Dashboard: current phase banner + what to do now
-/employee/nominate        Phase 1: pick category, colleague, justification
+/employee/nominate        Phase 1: pick category and colleague
 /employee/vote            Phase 3: one card group per category, confirm dialog
 /employee/results         Shared published phase results for every signed-in role; "Your points" after final publication
 /committee                Category tabs → candidate list
-/committee/candidate/[id] Details, justifications, conflict declaration
+/committee/candidate/[id] Details, conflict declaration
 /committee/vote           Pick one candidate per category
 /admin                    Phase control + progress stats
 /admin/employees          Import roster, edit roles, departments and access
@@ -475,4 +473,4 @@ The delivery is split into three phases — see `docs/roadmap.md` for what "done
 
 ## 17. Out of scope (v1)
 
-SMS/OTP login, email notifications, real-time dashboards, vote editing, multi-year history, file uploads for evidence (use text/links in the justification for now).
+SMS/OTP login, email notifications, real-time dashboards, vote editing, multi-year history, file uploads for evidence.

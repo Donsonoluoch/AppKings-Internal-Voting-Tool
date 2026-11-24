@@ -52,11 +52,6 @@ const config = {
   // §1 / §14 — points only. Each of these is one assumption that is cheap to change.
   rules: {
     selfNominationLimit: num('SELF_NOMINATION_LIMIT', DEFAULT_RULES.SELF_NOMINATION_LIMIT),
-    // The schema env name is the documented one; the older name is still accepted.
-    minJustification: num(
-      'NOMINATION_MIN_JUSTIFICATION',
-      num('MIN_JUSTIFICATION', DEFAULT_RULES.NOMINATION_MIN_JUSTIFICATION)
-    ),
     topPerCategory: num('TOP_PER_CATEGORY', DEFAULT_RULES.TOP_PER_CATEGORY),
     phase1Finalists: num('PHASE1_FINALISTS', DEFAULT_RULES.PHASE1_FINALISTS),
     phase2FinalistsMin: num('PHASE2_FINALISTS_MIN', DEFAULT_RULES.PHASE2_FINALISTS_MIN),

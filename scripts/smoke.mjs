@@ -130,7 +130,7 @@ async function main() {
 
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: categories[0].id, nomineeId: emp.user.id, justification: 'x'.repeat(30) },
+    body: { categoryId: categories[0].id, nomineeId: emp.user.id },
   });
   check('nomination before Phase 1 is rejected (409 PHASE_CLOSED)', result.status === 409 && result.body?.error?.code === 'PHASE_CLOSED', JSON.stringify(result.body));
 
@@ -152,29 +152,27 @@ async function main() {
 
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: categories[0].id, nomineeId: colleague.id, justification: 'short' },
+    body: { categoryId: categories[0].id, nomineeId: colleague.id },
   });
-  check('justification under 20 characters is rejected', result.status === 400, JSON.stringify(result.body));
-
-  result = await emp.call('/nominations', {
-    method: 'PUT',
-    body: {
-      categoryId: categories[0].id,
-      nomineeId: colleague.id,
-      justification: 'Delivered the Q3 migration on time, with zero downtime and clear documentation.',
-    },
-  });
-  check('a valid nomination is accepted in Phase 1', result.status === 200, JSON.stringify(result.body));
+  check(
+    'a nomination without a justification is accepted',
+    result.status === 200 && !Object.hasOwn(result.body?.nomination ?? {}, 'justification'),
+    JSON.stringify(result.body)
+  );
 
   result = await emp.call('/nominations', {
     method: 'PUT',
     body: {
       categoryId: categories[0].id,
       nomineeId: other.id,
-      justification: 'Ran the customer onboarding revamp that cut time-to-first-ticket by 40%.',
+      justification: 'short',
     },
   });
-  check('a second nomination in the same category replaces the first', result.status === 200, JSON.stringify(result.body));
+  check(
+    'a short legacy justification is ignored when replacing a nomination',
+    result.status === 200 && !Object.hasOwn(result.body?.nomination ?? {}, 'justification'),
+    JSON.stringify(result.body)
+  );
 
   const mine = (await emp.call('/nominations/mine')).body.nominations;
   check(
@@ -185,27 +183,27 @@ async function main() {
 
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: categories[1].id, nomineeId: emp.user.id, justification: 'I led the onboarding revamp that cut time-to-first-ticket by 40%.' },
+    body: { categoryId: categories[1].id, nomineeId: emp.user.id },
   });
   check('first self-nomination is accepted', result.status === 200, JSON.stringify(result.body));
 
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: categories[2].id, nomineeId: emp.user.id, justification: 'Independent evidence: I also ran the 2026 hack week for the whole company.' },
+    body: { categoryId: categories[2].id, nomineeId: emp.user.id },
   });
   check('second self-nomination (any category) is rejected', result.status === 409, JSON.stringify(result.body));
 
   const teamCategory = categories.find((c) => c.forTeams);
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: teamCategory.id, nomineeId: colleague.id, justification: 'Should not work: Team of the Year takes a team, not a person.' },
+    body: { categoryId: teamCategory.id, nomineeId: colleague.id },
   });
   check('Team of the Year rejects employee nominees', result.status === 400, JSON.stringify(result.body));
 
   const teams = colleagues.teams;
   result = await emp.call('/nominations', {
     method: 'PUT',
-    body: { categoryId: teamCategory.id, nomineeTeamId: teams[0].id, justification: 'The team shipped three releases while short two engineers and never missed a date.' },
+    body: { categoryId: teamCategory.id, nomineeTeamId: teams[0].id },
   });
   check('Team of the Year accepts a team nominee', result.status === 200, JSON.stringify(result.body));
 
@@ -240,7 +238,6 @@ async function main() {
           ...(category.forTeams
             ? { nomineeTeamId: teams[(index + categoryIndex) % teams.length].id }
             : { nomineeId: nominee.id }),
-          justification: `Nomination for ${category.name}: sustained excellent work with clear, specific outcomes.`,
         },
       });
     }

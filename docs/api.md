@@ -48,7 +48,7 @@ attempts per 15 minutes per IP. Phone-only login does not verify control of the 
 
 ### `POST /auth/logout` → `{ ok: true }` (clears the cookie)
 ### `GET /auth/me` → `{ user, phase, phaseMeta, resultsPublic, rules }`
-`rules` is `config.rules`: `selfNominationLimit`, `minJustification`, `topPerCategory`,
+`rules` is `config.rules`: `selfNominationLimit`, `topPerCategory`,
 `phase1Finalists`, `phase2FinalistsMin/Max`, `minCandidatesPerCategory`, `teamFinalists`,
 `committeePicksPerCategory`.
 
@@ -67,14 +67,14 @@ No phone numbers, ever.
 
 ### `PUT /nominations` — Phase 1 only
 ```json
-{ "categoryId": "…", "nomineeId": "…", "justification": "at least 20 characters" }
+{ "categoryId": "…", "nomineeId": "…" }
 ```
 Team of the Year takes `nomineeTeamId` instead of `nomineeId`. Replaces this employee's
 previous nomination in that category. `200` → `{ nomination }`.
 `409 CONFLICT` when the one allowed self-nomination is already used in another category.
 
 ### `GET /nominations/mine`
-→ `{ nominations: [{ id, categoryId, categoryName, nomineeId, nomineeTeamId, nominee, justification, isSelf, createdAt }] }`
+→ `{ nominations: [{ id, categoryId, categoryName, nomineeId, nomineeTeamId, nominee, isSelf, createdAt }] }`
 
 ### `GET /shortlist` — Phase 3 onwards
 → `{ categories: [{ ...category, hasVoted, candidates: [{ id, name, kind: "employee"|"team", department }] }] }`
@@ -106,14 +106,14 @@ Admins may also preview unpublished results.
 ## Committee (`COMMITTEE` or `ADMIN`)
 
 ### `GET /committee/nominations` — Phase 1 or 2
-→ `{ categories: [{ ...category, nominees: [{ nomineeId, nomineeTeamId, name, department, nominationCount, nominators, justifications, isCandidate }] }] }`
+→ `{ categories: [{ ...category, nominees: [{ nomineeId, nomineeTeamId, name, department, nominationCount, nominators, isCandidate }] }] }`
 
 ### `GET /committee/candidates` — Phase 2
 → `{ categories: [{ ...category, candidates: [{ id, name, kind, department, eligible, nominationPoints, inPhase2, inPhase3, myPick, hasConflict, conflictReason }] }], picksPerCategory }`
 Only the caller's own pick is ever included.
 
 ### `GET /committee/candidates/:id` — Phase 2
-→ `{ candidate, justifications: [{ nominator, justification, isSelf, createdAt }] }`
+→ `{ candidate }`
 
 ### `PUT /committee/picks` — Phase 2
 ```json
